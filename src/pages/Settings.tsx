@@ -26,6 +26,21 @@ import { AISettings, DEFAULT_AI_SETTINGS } from '../types';
 import { loadSettings, saveSettings, getAuthUser, signOut } from '../data/storage';
 import { testApiConnection, sendChatMessage } from '../data/aiService';
 import { isOnline } from '../lib/supabase';
+import {
+  getRecentUsage,
+  getTotalUsage,
+  clearUsage,
+  type DailyUsage,
+} from '../data/tokenUsage';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -42,6 +57,14 @@ export default function Settings() {
       getAuthUser().then((u) => setUserEmail(u?.email ?? null));
     }
   }, []);
+
+  // Token usage state
+  const [usageLog, setUsageLog] = useState(() => getRecentUsage(7));
+  const [totalUsage, setTotalUsage] = useState(() => getTotalUsage());
+  const refreshUsage = () => {
+    setUsageLog(getRecentUsage(7));
+    setTotalUsage(getTotalUsage());
+  };
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
@@ -94,6 +117,7 @@ export default function Settings() {
       const currentSettings = { ...DEFAULT_AI_SETTINGS, ...settings };
       const reply = await sendChatMessage(updatedMessages, currentSettings);
       setChatMessages([...updatedMessages, { role: 'assistant', content: reply }]);
+      refreshUsage();
     } catch (err) {
       setChatMessages([
         ...updatedMessages,
@@ -153,6 +177,113 @@ export default function Settings() {
           未配置 Supabase，数据仅保存在本地。配置 .env 后可启用云同步。
         </Alert>
       )}
+
+      {/* Token Usage */}
+      <Card sx={{ mb: 2, borderRadius: 2 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="subtitle1" fontWeight={600}>
+              Token 使用统计
+            </Typography>
+            {totalUsage.totalTokens > 0 && (
+              <Button
+                size="small"
+                color="inherit"
+                onClick={() => {
+                  if (confirm('确定清除所有统计数据？')) {
+                    clearUsage();
+                    refreshUsage();
+                  }
+                }}
+                sx={{ fontSize: '0.7rem' }}
+              >
+                清除
+              </Button>
+            )}
+          </Box>
+
+          {totalUsage.totalTokens === 0 ? (
+            <Typography variant="body2" color="text.secondary" textAlign="center" py={2}>
+              暂无使用记录，调用 API 后自动统计
+            </Typography>
+          ) : (
+            <>
+              {/* Summary row */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-around', mb: 2, textAlign: 'center' }}>
+                <Box>
+                  <Typography variant="h6" fontWeight={700} color="primary.main">
+                    {(totalUsage.totalTokens / 1000).toFixed(1)}k
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">累计 Token</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="h6" fontWeight={700} color="success.main">
+                    {totalUsage.callCount}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">API 调用次数</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="h6" fontWeight={700} color="secondary.main">
+                    {totalUsage.callCount > 0 ? Math.round(totalUsage.totalTokens / totalUsage.callCount) : 0}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">平均/次</Typography>
+                </Box>
+              </Box>
+
+              {/* 7-day bar chart */}
+              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 0.5, display: 'block' }}>
+                近 7 天用量
+              </Typography>
+              <Box sx={{ height: 140 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={usageLog}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      fontSize={10}
+                      tickFormatter={(v: string) => v.slice(5)}
+                    />
+                    <YAxis fontSize={10} tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} />
+                    <Tooltip
+                      formatter={(value: number) => [`${value} tokens`, '用量']}
+                      labelFormatter={(label: string) => label}
+                    />
+                    <Bar dataKey="totalTokens" fill="#7C3AED" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
+
+              {/* Today detail */}
+              {(() => {
+                const today = new Date().toISOString().slice(0, 10);
+                const todayData = usageLog.find((d) => d.date === today);
+                if (!todayData || todayData.totalTokens === 0) return null;
+                return (
+                  <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#F8F7FF', borderRadius: 2 }}>
+                    <Typography variant="caption" fontWeight={600} color="primary.main">
+                      今日详情
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        输入: {todayData.promptTokens}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        输出: {todayData.completionTokens}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        合计: {todayData.totalTokens}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        调用: {todayData.callCount}次
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })()}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <Collapse in={!!alert}>
         <Alert

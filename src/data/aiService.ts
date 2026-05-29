@@ -1,5 +1,6 @@
 import { Goals, TimeBlock, TimeBudget, AISettings, KnowledgeCard, ChatMessage, DAY_NAMES } from '../types';
 import { generateSchedule } from './aiSimulation';
+import { recordUsage } from './tokenUsage';
 
 /**
  * Build the system prompt that instructs the LLM to return structured JSON.
@@ -161,6 +162,17 @@ export async function sendChatMessage(
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('Empty response from API');
+
+  // Record token usage
+  const usage = data.usage;
+  if (usage) {
+    recordUsage(
+      usage.prompt_tokens || 0,
+      usage.completion_tokens || 0,
+      usage.total_tokens || 0
+    );
+  }
+
   return content;
 }
 
