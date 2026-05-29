@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+/* Custom theme colors for block types */
+@theme {
+  --color-deep: #7C3AED;
+  --color-deep-light: #EDE9FE;
+  --color-deep-dark: #5B21B6;
+  --color-buffer: #F59E0B;
+  --color-buffer-light: #FEF3C7;
+  --color-buffer-dark: #B45309;
+  --color-break-block: #10B981;
+  --color-break-block-light: #D1FAE5;
+  --color-break-block-dark: #047857;
+}
+
+/* Base styles */
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c4b5fd;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a78bfa;
+}
+
+/* Card flip animation */
+.perspective-800 {
+  perspective: 800px;
+}
+
+.card-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.card-flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.card-flip-front,
+.card-flip-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 12px;
+}
+
+.card-flip-back {
+  transform: rotateY(180deg);
+}
+
+/* Timeline connector line */
+.timeline-line {
+  position: absolute;
+  left: 40px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, #7C3AED, #E9D5FF);
+}
+
+/* Pulse animation for AI generating */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(124, 58, 237, 0);
+  }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+/* ===== Mobile optimizations ===== */
+
+/* Safe area for notch phones (PWA standalone mode) */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .MuiBottomNavigation-root {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  body {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Prevent iOS bounce scroll */
+html {
+  overscroll-behavior: none;
+}
+
+/* Better touch targets on mobile */
+@media (max-width: 600px) {
+  .MuiIconButton-root {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* Tighter padding on small screens */
+  .MuiCardContent-root {
+    padding: 12px !important;
+  }
+
+  /* Dialog full-width on small phones */
+  .MuiDialog-paper {
+    margin: 8px !important;
+    max-width: calc(100% - 16px) !important;
+    width: 100% !important;
+  }
+}
+
+/* Prevent text selection on interactive elements */
+button, .MuiChip-root, .MuiToggleButton-root {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Smooth scrolling on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
