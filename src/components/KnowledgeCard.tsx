@@ -122,6 +122,9 @@ function KnowledgeCard({
               >
                 <Typography variant="caption" color="text.secondary">
                   {card.date} · {card.source}
+                  {card.nextReviewDate && (
+                    <> · 复习{card.nextReviewDate}</>
+                  )}
                 </Typography>
                 <Tooltip title="翻转查看答案">
                   <IconButton

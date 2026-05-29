@@ -29,6 +29,7 @@ export interface HourlyCheckin {
 export interface DayData {
   blocks: TimeBlock[];
   checkins?: HourlyCheckin[];
+  dailySummary?: string;
 }
 
 export interface Goals {
@@ -43,6 +44,8 @@ export interface KnowledgeCard {
   tags: string[];
   mastery: number; // 0-3
   source: string;
+  nextReviewDate?: string; // ISO date for spaced repetition
+  reviewCount?: number;
 }
 
 export interface WeekData {

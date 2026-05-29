@@ -31,6 +31,8 @@ import {
   deleteKnowledgeCard,
   getWeekKey,
   loadSettings,
+  getNextReviewDate,
+  getDueCards,
 } from '../data/storage';
 import { generateKnowledgeCardWithAI } from '../data/aiService';
 import KnowledgeCardComp from '../components/KnowledgeCard';
@@ -44,6 +46,7 @@ function KnowledgeCards() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTags, setFilterTags] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [dueOnly, setDueOnly] = useState(false);
 
   // AI generation
   const [aiLoading, setAiLoading] = useState(false);
@@ -92,29 +95,36 @@ function KnowledgeCards() {
       );
     }
 
-    setFilteredCards(result);
-  }, [cards, searchQuery, filterTags]);
+    if (dueOnly) {
+      const today = new Date().toISOString().slice(0, 10);
+      result = result.filter((c) => !c.nextReviewDate || c.nextReviewDate <= today);
+    }
 
-  // Mastery change
+    setFilteredCards(result);
+  }, [cards, searchQuery, filterTags, dueOnly]);
+
+  // Mastery change (with spaced repetition scheduling)
   const handleMasteryChange = (cardId: string, newMastery: number) => {
+    const nextDate = getNextReviewDate(newMastery);
     setCards((prev) =>
-      prev.map((c) => (c.id === cardId ? { ...c, mastery: newMastery } : c))
+      prev.map((c) => (c.id === cardId ? { ...c, mastery: newMastery, nextReviewDate: nextDate } : c))
     );
     const card = cards.find((c) => c.id === cardId);
     if (card) {
       const cardWeekKey = getWeekKey(new Date(card.date));
-      updateKnowledgeCard(cardWeekKey, cardId, { mastery: newMastery });
+      updateKnowledgeCard(cardWeekKey, cardId, { mastery: newMastery, nextReviewDate: nextDate });
     }
   };
 
   const handleMarkMastered = (cardId: string) => {
+    const nextDate = getNextReviewDate(3);
     setCards((prev) =>
-      prev.map((c) => (c.id === cardId ? { ...c, mastery: 3 } : c))
+      prev.map((c) => (c.id === cardId ? { ...c, mastery: 3, nextReviewDate: nextDate, reviewCount: (c.reviewCount || 0) + 1 } : c))
     );
     const card = cards.find((c) => c.id === cardId);
     if (card) {
       const weekKey = getWeekKey(new Date(card.date));
-      updateKnowledgeCard(weekKey, cardId, { mastery: 3 });
+      updateKnowledgeCard(weekKey, cardId, { mastery: 3, nextReviewDate: nextDate, reviewCount: (card.reviewCount || 0) + 1 });
     }
   };
 
@@ -125,6 +135,7 @@ function KnowledgeCards() {
     try {
       const settings = loadSettings();
       const newCard = await generateKnowledgeCardWithAI(questionInput, settings);
+      newCard.nextReviewDate = getNextReviewDate(0);
       const weekKey = getWeekKey(new Date());
       addKnowledgeCard(weekKey, newCard);
       setCards((prev) => [...prev, newCard]);
@@ -196,6 +207,7 @@ function KnowledgeCards() {
       tags: tags.length > 0 ? tags : ['笔记'],
       mastery: 0,
       source: '手动添加',
+      nextReviewDate: getNextReviewDate(0),
     };
     const weekKey = getWeekKey(new Date());
     addKnowledgeCard(weekKey, newCard);
@@ -215,6 +227,8 @@ function KnowledgeCards() {
           (filteredCards.reduce((sum, c) => sum + c.mastery, 0) / totalCards) * 10
         ) / 10
       : 0;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dueCount = cards.filter((c) => !c.nextReviewDate || c.nextReviewDate <= todayStr).length;
 
   return (
     <Box>
@@ -261,6 +275,14 @@ function KnowledgeCards() {
               平均掌握度
             </Typography>
           </Box>
+          <Box>
+            <Typography variant="h5" fontWeight={700} color="warning.main">
+              {dueCount}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              待复习
+            </Typography>
+          </Box>
         </CardContent>
       </Card>
 
@@ -288,13 +310,22 @@ function KnowledgeCards() {
           }}
         />
         <Button
+          variant={dueOnly ? 'contained' : 'outlined'}
+          size="small"
+          color={dueOnly ? 'warning' : 'primary'}
+          onClick={() => setDueOnly(!dueOnly)}
+          sx={{ whiteSpace: 'nowrap', minWidth: 'auto' }}
+        >
+          待复习{dueCount > 0 ? `(${dueCount})` : ''}
+        </Button>
+        <Button
           variant="outlined"
           size="small"
           onClick={() => setShowFilters(!showFilters)}
           startIcon={<FilterListIcon />}
-          sx={{ whiteSpace: 'nowrap', minWidth: 'auto' }}
+          sx={{ whiteSpace: 'nowrap', minWidth: 'auto', display: { xs: 'none', sm: 'flex' } }}
         >
-          筛选
+          标签
         </Button>
         <Button
           variant="outlined"

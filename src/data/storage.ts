@@ -249,6 +249,54 @@ export function getCheckins(
   return data.weeks[weekKey]?.days[dateStr]?.checkins ?? [];
 }
 
+/** Save daily summary for a given day. */
+export function saveDailySummary(
+  weekKey: string,
+  dateStr: string,
+  summary: string
+): void {
+  const data = loadData();
+  if (!data.weeks[weekKey]) {
+    data.weeks[weekKey] = { goals: {}, days: {}, knowledgeCards: [] };
+  }
+  if (!data.weeks[weekKey].days[dateStr]) {
+    data.weeks[weekKey].days[dateStr] = { blocks: [] };
+  }
+  data.weeks[weekKey].days[dateStr].dailySummary = summary;
+  saveData(data);
+}
+
+/** Get daily summary for a given day. */
+export function getDailySummary(
+  weekKey: string,
+  dateStr: string
+): string {
+  const data = loadData();
+  return data.weeks[weekKey]?.days[dateStr]?.dailySummary ?? '';
+}
+
+/**
+ * Calculate next review date based on mastery level.
+ * mastery 0 → 1 day, 1 → 3 days, 2 → 7 days, 3 → 21 days
+ */
+export function getNextReviewDate(mastery: number): string {
+  const intervals = [1, 3, 7, 21];
+  const days = intervals[Math.min(mastery, 3)];
+  const next = new Date();
+  next.setDate(next.getDate() + days);
+  return next.toISOString().slice(0, 10);
+}
+
+/** Get all cards that are due for review today (or overdue). */
+export function getDueCards(): KnowledgeCard[] {
+  const today = new Date().toISOString().slice(0, 10);
+  const allCards = getAllKnowledgeCards();
+  return allCards.filter((card) => {
+    if (!card.nextReviewDate) return true; // old cards without schedule
+    return card.nextReviewDate <= today;
+  });
+}
+
 /* ===== Cloud Sync (Supabase) ===== */
 
 let currentUserId: string | null = null;

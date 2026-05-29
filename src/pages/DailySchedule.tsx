@@ -47,7 +47,13 @@ import {
   saveDayBlocks,
   getCheckins,
   saveCheckin,
+  saveDailySummary,
+  getDailySummary,
+  addKnowledgeCard,
+  loadSettings,
 } from '../data/storage';
+import { generateKnowledgeCardWithAI } from '../data/aiService';
+import type { KnowledgeCard } from '../types';
 
 // Fixed time grid: 10:00 to 19:00
 const HOURS = ['10', '11', '12', '13', '14', '15', '16', '17', '18'];
@@ -75,7 +81,9 @@ function DailySchedule() {
   // Data state
   const [blocks, setBlocks] = useState<TimeBlockType[]>([]);
   const [checkins, setCheckins] = useState<HourlyCheckin[]>([]);
+  const [dailySummary, setDailySummary] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [genCardLoading, setGenCardLoading] = useState(false);
 
   // Add task dialog
   const [addOpen, setAddOpen] = useState(false);
@@ -106,6 +114,7 @@ function DailySchedule() {
     const dayData = getDayBlocks(weekKey, dateStr);
     setBlocks(dayData?.blocks ?? []);
     setCheckins(dayData?.checkins ?? []);
+    setDailySummary(getDailySummary(weekKey, dateStr));
     setLoaded(true);
   }, [dateStr, weekKey]);
 
@@ -662,6 +671,34 @@ function DailySchedule() {
             rows={2}
             placeholder="这小时做了什么、遇到什么问题..."
           />
+          {checkinNote.trim() && (
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={genCardLoading}
+              onClick={async () => {
+                const settings = loadSettings();
+                if (!settings.apiKey) {
+                  alert('请先在设置中配置 API');
+                  return;
+                }
+                setGenCardLoading(true);
+                try {
+                  const card = await generateKnowledgeCardWithAI(checkinNote, settings);
+                  const weekKey = getWeekKey(date);
+                  addKnowledgeCard(weekKey, card);
+                  alert('已生成知识卡片！可在知识卡片页查看');
+                } catch (err) {
+                  alert(`生成失败：${err instanceof Error ? err.message : String(err)}`);
+                } finally {
+                  setGenCardLoading(false);
+                }
+              }}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              {genCardLoading ? '生成中...' : '🤖 AI 提取知识点'}
+            </Button>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
           <Button onClick={() => setCheckinOpen(false)} color="inherit" sx={{ borderRadius: 2 }}>取消</Button>
@@ -670,6 +707,25 @@ function DailySchedule() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Daily Summary */}
+      <Card sx={{ mt: 2, borderRadius: 3 }} elevation={0}>
+        <CardContent>
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+            📝 今日一句话总结
+          </Typography>
+          <TextField
+            value={dailySummary}
+            onChange={(e) => setDailySummary(e.target.value)}
+            onBlur={() => saveDailySummary(weekKey, dateStr, dailySummary)}
+            size="small"
+            fullWidth
+            multiline
+            rows={2}
+            placeholder="今天最大的收获是什么？一句话记录下来..."
+          />
+        </CardContent>
+      </Card>
     </Box>
   );
 }

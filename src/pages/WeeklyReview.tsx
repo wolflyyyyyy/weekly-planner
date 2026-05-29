@@ -15,6 +15,7 @@ import {
   Rating,
   Grid,
   Alert,
+  Divider,
 } from '@mui/material';
 import {
   PieChart,
@@ -51,6 +52,7 @@ import {
   getOrCreateWeekData,
   getAllKnowledgeCards,
   updateKnowledgeCard,
+  getDailySummary,
 } from '../data/storage';
 
 function WeeklyReview() {
@@ -405,6 +407,160 @@ function WeeklyReview() {
               暂无本周计划数据
             </Typography>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Daily Summaries */}
+      <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+        📝 每日总结
+      </Typography>
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          {(() => {
+            const summaries = DAY_NAMES.map((dayName, idx) => {
+              const dateStr = format(days[idx], 'yyyy-MM-dd');
+              const summary = getDailySummary(weekKey, dateStr);
+              return { day: DAY_LABELS[dayName], date: dateStr, summary };
+            });
+            const hasAny = summaries.some((s) => s.summary);
+            if (!hasAny) {
+              return (
+                <Typography variant="body2" color="text.secondary" textAlign="center" py={3}>
+                  本周暂无每日总结，在每日页面底部记录你的一句话收获
+                </Typography>
+              );
+            }
+            return summaries.map((s) => (
+              <Box key={s.date} sx={{ mb: 1.5, '&:last-child': { mb: 0 } }}>
+                <Typography variant="caption" color="text.secondary" fontWeight={600}>
+                  {s.day}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.25 }}>
+                  {s.summary || '—'}
+                </Typography>
+                {s.date !== summaries[summaries.length - 1].date && (
+                  <Divider sx={{ mt: 1 }} />
+                )}
+              </Box>
+            ));
+          })()}
+        </CardContent>
+      </Card>
+
+      {/* Knowledge Graph */}
+      <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+        🧩 知识图谱
+      </Typography>
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          {(() => {
+            const allCards = getAllKnowledgeCards();
+            if (allCards.length === 0) {
+              return (
+                <Typography variant="body2" color="text.secondary" textAlign="center" py={3}>
+                  暂无知识卡片数据
+                </Typography>
+              );
+            }
+
+            // Tag distribution
+            const tagMap: Record<string, { count: number; totalMastery: number }> = {};
+            for (const card of allCards) {
+              for (const tag of card.tags) {
+                if (!tagMap[tag]) tagMap[tag] = { count: 0, totalMastery: 0 };
+                tagMap[tag].count++;
+                tagMap[tag].totalMastery += card.mastery;
+              }
+            }
+            const tagStats = Object.entries(tagMap)
+              .map(([tag, data]) => ({
+                tag,
+                count: data.count,
+                avgMastery: Math.round((data.totalMastery / data.count) * 10) / 10,
+              }))
+              .sort((a, b) => b.count - a.count);
+
+            // Mastery distribution
+            const masteryDist = [0, 0, 0, 0];
+            for (const card of allCards) {
+              masteryDist[Math.min(card.mastery, 3)]++;
+            }
+
+            // Weak areas (avg mastery < 1.5)
+            const weakTags = tagStats.filter((t) => t.avgMastery < 1.5);
+
+            return (
+              <>
+                {/* Tag bar chart */}
+                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1, display: 'block' }}>
+                  标签分布
+                </Typography>
+                <Box sx={{ height: Math.max(150, tagStats.length * 32), mb: 3 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={tagStats.slice(0, 8)} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" allowDecimals={false} fontSize={11} />
+                      <YAxis type="category" dataKey="tag" fontSize={11} width={70} />
+                      <Tooltip
+                        formatter={(value: number, name: string) => {
+                          if (name === '卡片数') return [value, '卡片数'];
+                          return [value, name];
+                        }}
+                      />
+                      <Bar dataKey="count" name="卡片数" fill="#7C3AED" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+
+                {/* Mastery by tag */}
+                <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1, display: 'block' }}>
+                  各领域掌握度
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
+                  {tagStats.slice(0, 8).map((t) => (
+                    <Box key={t.tag}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
+                        <Typography variant="body2" fontWeight={500}>{t.tag}</Typography>
+                        <Typography variant="caption" color="text.secondary">{t.avgMastery}/3 · {t.count}张</Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={(t.avgMastery / 3) * 100}
+                        sx={{
+                          height: 6,
+                          borderRadius: 3,
+                          bgcolor: '#F3F4F6',
+                          '& .MuiLinearProgress-bar': {
+                            borderRadius: 3,
+                            bgcolor: t.avgMastery >= 2 ? '#10B981' : t.avgMastery >= 1 ? '#F59E0B' : '#EF4444',
+                          },
+                        }}
+                      />
+                    </Box>
+                  ))}
+                </Box>
+
+                {/* Weak areas alert */}
+                {weakTags.length > 0 && (
+                  <Alert severity="warning" sx={{ fontSize: '0.8rem' }}>
+                    薄弱领域：{weakTags.map((t) => `${t.tag}(${t.avgMastery})`).join('、')}，建议加强复习。
+                  </Alert>
+                )}
+
+                {/* Mastery distribution */}
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-around', textAlign: 'center' }}>
+                  {['完全不会', '有点印象', '基本掌握', '完全掌握'].map((label, idx) => (
+                    <Box key={label}>
+                      <Typography variant="h6" fontWeight={700} color={idx >= 2 ? 'success.main' : idx === 1 ? 'warning.main' : 'error.main'}>
+                        {masteryDist[idx]}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{label}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </>
+            );
+          })()}
         </CardContent>
       </Card>
 
