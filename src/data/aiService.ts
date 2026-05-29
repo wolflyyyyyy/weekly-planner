@@ -1,4 +1,4 @@
-import { Goals, TimeBlock, TimeBudget, AISettings, KnowledgeCard, DAY_NAMES } from '../types';
+import { Goals, TimeBlock, TimeBudget, AISettings, KnowledgeCard, ChatMessage, DAY_NAMES } from '../types';
 import { generateSchedule } from './aiSimulation';
 
 /**
@@ -282,5 +282,69 @@ export async function generateKnowledgeCardWithAI(
   } catch (err) {
     console.error('[AI] Card generation failed:', err);
     throw err;
+  }
+}
+
+/**
+ * Send a follow-up chat message about a knowledge card.
+ * Uses the card's Q&A as context and maintains conversation history.
+ */
+export async function sendCardChatMessage(
+  card: KnowledgeCard,
+  history: ChatMessage[],
+  userMessage: string,
+  settings: AISettings
+): Promise<string> {
+  if (!settings.apiKey || !settings.apiEndpoint) {
+    throw new Error('请先在设置中配置 API');
+  }
+
+  const systemPrompt = `你是一个知识学习助手。用户正在复习以下知识卡片：
+
+【问题】${card.question}
+【答案】${card.answer}
+
+基于这张卡片的内容，和用户进行深入讨论。要求：
+- 回答简洁有深度，不超过150字
+- 可以举例、类比、补充细节，但不要偏离主题
+- 如果用户的问题超出卡片范围，简要回答并引导回来`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user', content: userMessage },
+  ];
+
+  return sendChatMessage(messages, settings);
+}
+
+/**
+ * Generate a one-sentence summary of the chat discussion.
+ */
+export async function generateChatSummary(
+  card: KnowledgeCard,
+  history: ChatMessage[],
+  settings: AISettings
+): Promise<string> {
+  if (!settings.apiKey || !settings.apiEndpoint) {
+    return '';
+  }
+
+  const chatText = history
+    .map((m) => `${m.role === 'user' ? '用户' : 'AI'}：${m.content}`)
+    .join('\n');
+
+  const summaryPrompt = `知识卡片「${card.question}」的讨论记录：
+${chatText}
+
+请用一句话总结这次讨论的核心收获（不超过50字）。只输出总结文字，不要任何前缀。`;
+
+  try {
+    return await sendChatMessage(
+      [{ role: 'user', content: summaryPrompt }],
+      settings
+    );
+  } catch {
+    return '';
   }
 }

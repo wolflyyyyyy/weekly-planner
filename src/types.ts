@@ -36,6 +36,12 @@ export interface Goals {
   [day: string]: string;
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  time: string;
+}
+
 export interface KnowledgeCard {
   id: string;
   date: string;
@@ -46,6 +52,8 @@ export interface KnowledgeCard {
   source: string;
   nextReviewDate?: string; // ISO date for spaced repetition
   reviewCount?: number;
+  chatHistory?: ChatMessage[];
+  chatSummary?: string;
 }
 
 export interface WeekData {

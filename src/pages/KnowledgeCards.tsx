@@ -36,6 +36,8 @@ import {
 } from '../data/storage';
 import { generateKnowledgeCardWithAI } from '../data/aiService';
 import KnowledgeCardComp from '../components/KnowledgeCard';
+import CardChatDialog from '../components/CardChatDialog';
+import type { AISettings } from '../types';
 
 function KnowledgeCards() {
   // State
@@ -66,13 +68,19 @@ function KnowledgeCards() {
   const [addAnswer, setAddAnswer] = useState('');
   const [addTags, setAddTags] = useState('');
 
+  // Chat dialog
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatCard, setChatCard] = useState<KnowledgeCardType | null>(null);
+  const [settings, setSettings] = useState<AISettings | null>(null);
+
   // All tags
   const allTags = Array.from(new Set(cards.flatMap((c) => c.tags))).sort();
 
-  // Load cards
+  // Load cards and settings
   useEffect(() => {
     const allCards = getAllKnowledgeCards();
     setCards(allCards);
+    setSettings(loadSettings());
   }, []);
 
   // Apply filters
@@ -216,6 +224,24 @@ function KnowledgeCards() {
     setAddQuestion('');
     setAddAnswer('');
     setAddTags('');
+  };
+
+  // Open chat
+  const handleOpenChat = (card: KnowledgeCardType) => {
+    setChatCard(card);
+    setChatOpen(true);
+  };
+
+  // Close chat — save updated card with chat history
+  const handleCloseChat = (updatedCard: KnowledgeCardType) => {
+    setCards((prev) =>
+      prev.map((c) => (c.id === updatedCard.id ? updatedCard : c))
+    );
+    const weekKey = getWeekKey(new Date(updatedCard.date));
+    updateKnowledgeCard(weekKey, updatedCard.id, {
+      chatHistory: updatedCard.chatHistory,
+      chatSummary: updatedCard.chatSummary,
+    });
   };
 
   // Stats
@@ -419,6 +445,7 @@ function KnowledgeCards() {
                 onMarkMastered={handleMarkMastered}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
+                onChat={handleOpenChat}
               />
             </Grid>
           ))}
@@ -575,6 +602,19 @@ function KnowledgeCards() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Chat Dialog */}
+      {chatCard && settings && (
+        <CardChatDialog
+          open={chatOpen}
+          card={chatCard}
+          settings={settings}
+          onClose={(updatedCard) => {
+            setChatOpen(false);
+            handleCloseChat(updatedCard);
+          }}
+        />
+      )}
     </Box>
   );
 }

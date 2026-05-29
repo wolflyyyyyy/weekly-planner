@@ -8,11 +8,13 @@ import {
   Tooltip,
   Card,
   CardContent,
+  Button,
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import FlipCameraAndroidIcon from '@mui/icons-material/FlipCameraAndroid';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import { KnowledgeCard as KnowledgeCardType } from '../types';
 
 interface KnowledgeCardProps {
@@ -21,6 +23,7 @@ interface KnowledgeCardProps {
   onMarkMastered?: (cardId: string) => void;
   onEdit?: (card: KnowledgeCardType) => void;
   onDelete?: (cardId: string) => void;
+  onChat?: (card: KnowledgeCardType) => void;
 }
 
 /** A flashcard-style knowledge card with flip animation. */
@@ -30,6 +33,7 @@ function KnowledgeCard({
   onMarkMastered,
   onEdit,
   onDelete,
+  onChat,
 }: KnowledgeCardProps) {
   const [flipped, setFlipped] = useState(false);
 
@@ -41,7 +45,7 @@ function KnowledgeCard({
     <Card
       sx={{
         position: 'relative',
-        height: 240,
+        height: 280,
         cursor: 'pointer',
         overflow: 'visible',
         bgcolor: 'transparent',
@@ -184,13 +188,41 @@ function KnowledgeCard({
                 {card.answer}
               </Typography>
 
+              {/* Chat button */}
+              {onChat && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<ChatBubbleOutlineIcon sx={{ fontSize: 16 }} />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChat(card);
+                  }}
+                  sx={{
+                    mt: 1,
+                    alignSelf: 'flex-start',
+                    borderRadius: 3,
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    color: '#7C3AED',
+                    borderColor: '#DDD6FE',
+                    '&:hover': { borderColor: '#7C3AED', bgcolor: '#F5F3FF' },
+                  }}
+                >
+                  {card.chatHistory && card.chatHistory.length > 0
+                    ? `查看讨论(${card.chatHistory.filter((m) => m.role === 'user').length})`
+                    : '追问'}
+                </Button>
+              )}
+
               {/* Footer with mastery */}
               <Box
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  mt: 1.5,
+                  mt: 1,
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
