@@ -9,6 +9,7 @@ import WeeklyReview from './pages/WeeklyReview';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import { getAuthUser, setCurrentUser, syncFromCloud } from './data/storage';
+import { syncUsageFromCloud } from './data/tokenUsage';
 import { isOnline } from './lib/supabase';
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
         if (user) {
           setCurrentUser(user.id);
           await syncFromCloud();
+          await syncUsageFromCloud();
         }
       }
       setReady(true);

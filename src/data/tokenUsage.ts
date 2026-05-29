@@ -1,3 +1,5 @@
+import { supabase } from '../lib/supabase';
+
 const STORAGE_KEY = 'token-usage-log';
 
 export interface DailyUsage {
@@ -8,6 +10,13 @@ export interface DailyUsage {
 }
 
 export type UsageLog = Record<string, DailyUsage>; // "2026-05-29" → usage
+
+let currentUserId: string | null = null;
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function setUsageUserId(userId: string | null): void {
+  currentUserId = userId;
+}
 
 function loadLog(): UsageLog {
   try {
@@ -38,6 +47,7 @@ export function recordUsage(
   log[today].totalTokens += totalTokens;
   log[today].callCount += 1;
   saveLog(log);
+  syncUsageToCloud();
 }
 
 /** Get usage log (all days). */
@@ -81,4 +91,63 @@ export function getRecentUsage(days: number): Array<{ date: string } & DailyUsag
 /** Clear all usage data. */
 export function clearUsage(): void {
   localStorage.removeItem(STORAGE_KEY);
+}
+
+/** Pull token usage from Supabase (merge with local). */
+export async function syncUsageFromCloud(): Promise<void> {
+  const client = supabase;
+  const uid = currentUserId;
+  if (!client || !uid) return;
+  try {
+    const { data, error } = await client
+      .from('user_data')
+      .select('value')
+      .eq('user_id', uid)
+      .eq('key', 'token_usage')
+      .single();
+
+    if (error || !data) return;
+
+    const cloudLog = data.value as UsageLog;
+    const localLog = loadLog();
+
+    // Merge: sum up both (avoid double counting same day)
+    const merged: UsageLog = { ...localLog };
+    for (const [date, cloudDay] of Object.entries(cloudLog)) {
+      if (!merged[date]) {
+        merged[date] = { ...cloudDay };
+      } else {
+        // If both have data for same day, take the larger total
+        // (avoids double-counting from overlapping syncs)
+        if (cloudDay.totalTokens > merged[date].totalTokens) {
+          merged[date] = { ...cloudDay };
+        }
+      }
+    }
+    saveLog(merged);
+  } catch (err) {
+    console.error('[TokenSync] Failed to pull from cloud:', err);
+  }
+}
+
+/** Push token usage to Supabase (debounced). */
+function syncUsageToCloud(): void {
+  const client = supabase;
+  const uid = currentUserId;
+  if (!client || !uid) return;
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    try {
+      const log = loadLog();
+      const { error } = await client
+        .from('user_data')
+        .upsert(
+          { user_id: uid, key: 'token_usage', value: log },
+          { onConflict: 'user_id,key' }
+        );
+      if (error) console.error('[TokenSync] Failed to push to cloud:', error);
+    } catch (err) {
+      console.error('[TokenSync] Failed to push to cloud:', err);
+    }
+  }, 1000);
 }

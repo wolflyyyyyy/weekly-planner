@@ -17,6 +17,7 @@ import {
   format,
 } from 'date-fns';
 import { supabase } from '../lib/supabase';
+import { setUsageUserId, syncUsageFromCloud } from './tokenUsage';
 
 /** Load the full app data from localStorage. */
 export function loadData(): AppData {
@@ -305,6 +306,7 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null;
 /** Set the current user for cloud sync. Call this after login. */
 export function setCurrentUser(userId: string | null): void {
   currentUserId = userId;
+  setUsageUserId(userId);
 }
 
 /** Pull data from Supabase into localStorage. */
@@ -381,6 +383,7 @@ export async function signIn(email: string, password: string): Promise<{ error?:
   if (user) {
     setCurrentUser(user.id);
     await syncFromCloud();
+    await syncUsageFromCloud();
   }
   return {};
 }
@@ -395,6 +398,7 @@ export async function signUp(email: string, password: string): Promise<{ error?:
   if (user) {
     setCurrentUser(user.id);
     syncToCloud();
+    syncUsageFromCloud();
   }
   return {};
 }
