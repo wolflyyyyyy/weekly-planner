@@ -11,12 +11,16 @@ import {
 } from '@mui/material';
 import CheckIcon from '@mui/icons-material/Check';
 import FlipCameraAndroidIcon from '@mui/icons-material/FlipCameraAndroid';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { KnowledgeCard as KnowledgeCardType } from '../types';
 
 interface KnowledgeCardProps {
   card: KnowledgeCardType;
   onMasteryChange?: (cardId: string, newMastery: number) => void;
   onMarkMastered?: (cardId: string) => void;
+  onEdit?: (card: KnowledgeCardType) => void;
+  onDelete?: (cardId: string) => void;
 }
 
 /** A flashcard-style knowledge card with flip animation. */
@@ -24,6 +28,8 @@ function KnowledgeCard({
   card,
   onMasteryChange,
   onMarkMastered,
+  onEdit,
+  onDelete,
 }: KnowledgeCardProps) {
   const [flipped, setFlipped] = useState(false);
 
@@ -205,6 +211,32 @@ function KnowledgeCard({
                 </Box>
 
                 <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  {onEdit && (
+                    <Tooltip title="编辑">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEdit(card);
+                        }}
+                      >
+                        <EditIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                  {onDelete && (
+                    <Tooltip title="删除">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(card.id);
+                        }}
+                      >
+                        <DeleteOutlineIcon sx={{ fontSize: 18, color: 'error.main' }} />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                   {onMarkMastered && card.mastery < 3 && (
                     <Tooltip title="标记为已掌握">
                       <IconButton

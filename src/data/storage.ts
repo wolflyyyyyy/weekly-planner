@@ -152,6 +152,18 @@ export function updateKnowledgeCard(
   }
 }
 
+/** Delete a knowledge card by id. */
+export function deleteKnowledgeCard(
+  weekKey: string,
+  cardId: string
+): void {
+  const data = loadData();
+  const cards = data.weeks[weekKey]?.knowledgeCards;
+  if (!cards) return;
+  data.weeks[weekKey].knowledgeCards = cards.filter((c) => c.id !== cardId);
+  saveData(data);
+}
+
 /** Get all knowledge cards across all weeks, optionally filtered. */
 export function getAllKnowledgeCards(
   filters?: {

@@ -20,6 +20,7 @@ import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import CloseIcon from '@mui/icons-material/Close';
+import AddIcon from '@mui/icons-material/Add';
 import {
   KnowledgeCard as KnowledgeCardType,
 } from '../types';
@@ -27,9 +28,11 @@ import {
   getAllKnowledgeCards,
   addKnowledgeCard,
   updateKnowledgeCard,
+  deleteKnowledgeCard,
   getWeekKey,
+  loadSettings,
 } from '../data/storage';
-import { generateKnowledgeCards } from '../data/aiSimulation';
+import { generateKnowledgeCardWithAI } from '../data/aiService';
 import KnowledgeCardComp from '../components/KnowledgeCard';
 
 function KnowledgeCards() {
@@ -45,7 +48,20 @@ function KnowledgeCards() {
   // AI generation
   const [aiLoading, setAiLoading] = useState(false);
   const [genDialogOpen, setGenDialogOpen] = useState(false);
-  const [noteInput, setNoteInput] = useState('');
+  const [questionInput, setQuestionInput] = useState('');
+
+  // Edit dialog
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editCard, setEditCard] = useState<KnowledgeCardType | null>(null);
+  const [editQuestion, setEditQuestion] = useState('');
+  const [editAnswer, setEditAnswer] = useState('');
+  const [editTags, setEditTags] = useState('');
+
+  // Manual add dialog
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addQuestion, setAddQuestion] = useState('');
+  const [addAnswer, setAddAnswer] = useState('');
+  const [addTags, setAddTags] = useState('');
 
   // All tags
   const allTags = Array.from(new Set(cards.flatMap((c) => c.tags))).sort();
@@ -102,22 +118,92 @@ function KnowledgeCards() {
     }
   };
 
-  // AI generate cards
+  // AI generate card from question
   const handleAIGenerate = async () => {
-    if (!noteInput.trim()) return;
+    if (!questionInput.trim()) return;
     setAiLoading(true);
     try {
-      const newCards = await generateKnowledgeCards(noteInput);
+      const settings = loadSettings();
+      const newCard = await generateKnowledgeCardWithAI(questionInput, settings);
       const weekKey = getWeekKey(new Date());
-      for (const card of newCards) {
-        addKnowledgeCard(weekKey, card);
-      }
-      setCards((prev) => [...prev, ...newCards]);
+      addKnowledgeCard(weekKey, newCard);
+      setCards((prev) => [...prev, newCard]);
       setGenDialogOpen(false);
-      setNoteInput('');
+      setQuestionInput('');
+    } catch (err) {
+      alert(`生成失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setAiLoading(false);
     }
+  };
+
+  // Delete card
+  const handleDelete = (cardId: string) => {
+    if (!confirm('确定删除这张卡片？')) return;
+    const card = cards.find((c) => c.id === cardId);
+    if (card) {
+      const weekKey = getWeekKey(new Date(card.date));
+      deleteKnowledgeCard(weekKey, cardId);
+      setCards((prev) => prev.filter((c) => c.id !== cardId));
+    }
+  };
+
+  // Open edit dialog
+  const handleEdit = (card: KnowledgeCardType) => {
+    setEditCard(card);
+    setEditQuestion(card.question);
+    setEditAnswer(card.answer);
+    setEditTags(card.tags.join(', '));
+    setEditDialogOpen(true);
+  };
+
+  // Save edit
+  const handleSaveEdit = () => {
+    if (!editCard || !editQuestion.trim() || !editAnswer.trim()) return;
+    const weekKey = getWeekKey(new Date(editCard.date));
+    const tags = editTags
+      .split(/[,，、]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    updateKnowledgeCard(weekKey, editCard.id, {
+      question: editQuestion.trim(),
+      answer: editAnswer.trim(),
+      tags,
+    });
+    setCards((prev) =>
+      prev.map((c) =>
+        c.id === editCard.id
+          ? { ...c, question: editQuestion.trim(), answer: editAnswer.trim(), tags }
+          : c
+      )
+    );
+    setEditDialogOpen(false);
+    setEditCard(null);
+  };
+
+  // Manual add card
+  const handleManualAdd = () => {
+    if (!addQuestion.trim() || !addAnswer.trim()) return;
+    const tags = addTags
+      .split(/[,，、]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const newCard: KnowledgeCardType = {
+      id: `kc-manual-${Date.now()}`,
+      date: new Date().toISOString().slice(0, 10),
+      question: addQuestion.trim(),
+      answer: addAnswer.trim(),
+      tags: tags.length > 0 ? tags : ['笔记'],
+      mastery: 0,
+      source: '手动添加',
+    };
+    const weekKey = getWeekKey(new Date());
+    addKnowledgeCard(weekKey, newCard);
+    setCards((prev) => [...prev, newCard]);
+    setAddDialogOpen(false);
+    setAddQuestion('');
+    setAddAnswer('');
+    setAddTags('');
   };
 
   // Stats
@@ -137,7 +223,7 @@ function KnowledgeCards() {
         📚 知识卡片
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        AI 自动从工作笔记中提取知识，翻转卡片来复习
+        向 AI 提问生成卡片，或手动添加，翻转卡片来复习
       </Typography>
 
       {/* Stats */}
@@ -211,13 +297,22 @@ function KnowledgeCards() {
           筛选
         </Button>
         <Button
+          variant="outlined"
+          size="small"
+          startIcon={<AddIcon />}
+          onClick={() => setAddDialogOpen(true)}
+          sx={{ whiteSpace: 'nowrap', minWidth: 'auto' }}
+        >
+          添加
+        </Button>
+        <Button
           variant="contained"
           size="small"
           startIcon={<AutoAwesomeIcon />}
           onClick={() => setGenDialogOpen(true)}
           sx={{ whiteSpace: 'nowrap', minWidth: 'auto' }}
         >
-          AI生成
+          AI
         </Button>
       </Box>
 
@@ -269,7 +364,7 @@ function KnowledgeCards() {
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
               {cards.length === 0
-                ? '暂无知识卡片，点击"AI生成"来创建'
+                ? '暂无知识卡片，点击"AI"提问或"添加"手动创建'
                 : '没有匹配的卡片'}
             </Typography>
             {cards.length === 0 && (
@@ -291,13 +386,15 @@ function KnowledgeCards() {
                 card={card}
                 onMasteryChange={handleMasteryChange}
                 onMarkMastered={handleMarkMastered}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
               />
             </Grid>
           ))}
         </Grid>
       )}
 
-      {/* AI Generation Dialog */}
+      {/* AI Generation Dialog — ask a question */}
       <Dialog
         open={genDialogOpen}
         onClose={() => setGenDialogOpen(false)}
@@ -310,17 +407,23 @@ function KnowledgeCards() {
         </DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            输入今天的工作笔记或学习内容，AI 将自动提取关键知识点生成卡片。
+            提出你的问题，AI 会生成一张正面是问题、背面是简洁答案的复习卡片。
           </Typography>
           <TextField
-            label="笔记内容"
-            value={noteInput}
-            onChange={(e) => setNoteInput(e.target.value)}
+            label="你的问题"
+            value={questionInput}
+            onChange={(e) => setQuestionInput(e.target.value)}
             size="small"
             fullWidth
             multiline
-            rows={5}
-            placeholder="例如：今天学习了PRD文档编写，P0/P1/P2需求优先级如何区分..."
+            rows={3}
+            placeholder="例如：什么是 SOLID 原则？React 的 useEffect 依赖数组怎么用？"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleAIGenerate();
+              }
+            }}
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -330,12 +433,114 @@ function KnowledgeCards() {
           <Button
             onClick={handleAIGenerate}
             variant="contained"
-            disabled={!noteInput.trim() || aiLoading}
+            disabled={!questionInput.trim() || aiLoading}
             startIcon={
               aiLoading ? <CircularProgress size={16} /> : <AutoAwesomeIcon />
             }
           >
-            {aiLoading ? 'AI 分析中...' : '生成卡片'}
+            {aiLoading ? 'AI 生成中...' : '生成卡片'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Card Dialog */}
+      <Dialog
+        open={editDialogOpen}
+        onClose={() => setEditDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>编辑卡片</DialogTitle>
+        <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <TextField
+            label="问题"
+            value={editQuestion}
+            onChange={(e) => setEditQuestion(e.target.value)}
+            size="small"
+            fullWidth
+            multiline
+            rows={2}
+          />
+          <TextField
+            label="答案"
+            value={editAnswer}
+            onChange={(e) => setEditAnswer(e.target.value)}
+            size="small"
+            fullWidth
+            multiline
+            rows={4}
+          />
+          <TextField
+            label="标签（逗号分隔）"
+            value={editTags}
+            onChange={(e) => setEditTags(e.target.value)}
+            size="small"
+            fullWidth
+            placeholder="标签1, 标签2"
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setEditDialogOpen(false)} color="inherit">
+            取消
+          </Button>
+          <Button
+            onClick={handleSaveEdit}
+            variant="contained"
+            disabled={!editQuestion.trim() || !editAnswer.trim()}
+          >
+            保存
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Manual Add Card Dialog */}
+      <Dialog
+        open={addDialogOpen}
+        onClose={() => setAddDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 600 }}>手动添加卡片</DialogTitle>
+        <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <TextField
+            label="问题"
+            value={addQuestion}
+            onChange={(e) => setAddQuestion(e.target.value)}
+            size="small"
+            fullWidth
+            multiline
+            rows={2}
+            placeholder="正面的问题"
+          />
+          <TextField
+            label="答案"
+            value={addAnswer}
+            onChange={(e) => setAddAnswer(e.target.value)}
+            size="small"
+            fullWidth
+            multiline
+            rows={4}
+            placeholder="背面的答案（简洁、结构化）"
+          />
+          <TextField
+            label="标签（逗号分隔）"
+            value={addTags}
+            onChange={(e) => setAddTags(e.target.value)}
+            size="small"
+            fullWidth
+            placeholder="标签1, 标签2"
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setAddDialogOpen(false)} color="inherit">
+            取消
+          </Button>
+          <Button
+            onClick={handleManualAdd}
+            variant="contained"
+            disabled={!addQuestion.trim() || !addAnswer.trim()}
+          >
+            添加
           </Button>
         </DialogActions>
       </Dialog>

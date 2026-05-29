@@ -1,4 +1,4 @@
-import { Goals, TimeBlock, TimeBudget, AISettings, DAY_NAMES } from '../types';
+import { Goals, TimeBlock, TimeBudget, AISettings, KnowledgeCard, DAY_NAMES } from '../types';
 import { generateSchedule } from './aiSimulation';
 
 /**
@@ -227,5 +227,60 @@ export async function testApiConnection(
     return { ok: true };
   } catch (err) {
     return { ok: false, error: String(err) };
+  }
+}
+
+/**
+ * Use LLM to generate a knowledge card from a user's question.
+ * Returns a concise Q&A card (question on front, reviewable answer on back).
+ */
+export async function generateKnowledgeCardWithAI(
+  userQuestion: string,
+  settings: AISettings
+): Promise<KnowledgeCard> {
+  if (!settings.apiKey || !settings.apiEndpoint) {
+    throw new Error('请先在设置中配置 API');
+  }
+
+  const systemPrompt = `你是一个知识卡片生成助手。用户会提出一个问题，你需要生成一张用于复习的闪卡。
+
+请严格按照以下 JSON 格式输出，不要添加任何额外文字：
+
+{
+  "question": "精炼后的问题（保持原意，可微调措辞使其更清晰）",
+  "answer": "简洁、结构化的答案，适合快速复习，不超过200字",
+  "tags": ["标签1", "标签2"]
+}
+
+答案要求：
+- 用简短的要点或关键词组织，不要写长篇大论
+- 重点突出，适合快速回忆和复述
+- 如果涉及步骤，用编号列出关键步骤即可
+- 如果涉及概念，给出一句话定义 + 核心要点`;
+
+  try {
+    const content = await sendChatMessage(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userQuestion },
+      ],
+      settings
+    );
+
+    const jsonStr = extractJSON(content);
+    const parsed = JSON.parse(jsonStr);
+
+    return {
+      id: `kc-ai-${Date.now()}`,
+      date: new Date().toISOString().slice(0, 10),
+      question: typeof parsed.question === 'string' ? parsed.question : userQuestion,
+      answer: typeof parsed.answer === 'string' ? parsed.answer : content,
+      tags: Array.isArray(parsed.tags) ? parsed.tags : ['AI'],
+      mastery: 0,
+      source: 'AI 生成',
+    };
+  } catch (err) {
+    console.error('[AI] Card generation failed:', err);
+    throw err;
   }
 }
