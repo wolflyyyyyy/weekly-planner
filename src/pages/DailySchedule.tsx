@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -51,6 +51,7 @@ import {
   getDailySummary,
   addKnowledgeCard,
   loadSettings,
+  getGoals,
 } from '../data/storage';
 import { generateKnowledgeCardWithAI } from '../data/aiService';
 import type { KnowledgeCard } from '../types';
@@ -82,8 +83,18 @@ function DailySchedule() {
   const [blocks, setBlocks] = useState<TimeBlockType[]>([]);
   const [checkins, setCheckins] = useState<HourlyCheckin[]>([]);
   const [dailySummary, setDailySummary] = useState('');
+  const [todayGoal, setTodayGoal] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [genCardLoading, setGenCardLoading] = useState(false);
+
+  // Current hour for highlighting
+  const now = new Date();
+  const isToday = dateStr === format(now, 'yyyy-MM-dd');
+  const currentHour = String(now.getHours());
+
+  // Refs for hour rows (for auto-scroll)
+  const hourRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrolledRef = useRef(false);
 
   // Add task dialog
   const [addOpen, setAddOpen] = useState(false);
@@ -115,8 +126,27 @@ function DailySchedule() {
     setBlocks(dayData?.blocks ?? []);
     setCheckins(dayData?.checkins ?? []);
     setDailySummary(getDailySummary(weekKey, dateStr));
+
+    // Load today's goal from weekly goals
+    const goals = getGoals(weekKey);
+    setTodayGoal(goals[dayName] || '');
+
     setLoaded(true);
-  }, [dateStr, weekKey]);
+  }, [dateStr, weekKey, dayName]);
+
+  // Auto-scroll to current hour on mount (only when viewing today)
+  useEffect(() => {
+    if (!loaded || scrolledRef.current) return;
+    if (isToday && HOURS.includes(currentHour)) {
+      scrolledRef.current = true;
+      setTimeout(() => {
+        hourRefs.current[currentHour]?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }, 300);
+    }
+  }, [loaded, isToday, currentHour]);
 
   // Persist blocks
   const persistBlocks = (newBlocks: TimeBlockType[]) => {
@@ -315,6 +345,38 @@ function DailySchedule() {
         </Typography>
       </Box>
 
+      {/* Today's Focus — from weekly goals */}
+      {todayGoal && (
+        <Card
+          sx={{
+            mb: 2,
+            borderRadius: 3,
+            background: 'linear-gradient(135deg, #7C3AED08, #7C3AED15)',
+            border: '1px solid #7C3AED20',
+          }}
+          elevation={0}
+        >
+          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Typography variant="caption" color="primary.main" fontWeight={600} sx={{ mb: 0.5, display: 'block' }}>
+              🎯 今日焦点
+            </Typography>
+            <Typography variant="body2" fontWeight={500} sx={{ lineHeight: 1.6 }}>
+              {todayGoal}
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Current hour indicator */}
+      {isToday && HOURS.includes(currentHour) && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, px: 1 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#7C3AED', animation: 'pulse-glow 2s infinite' }} />
+          <Typography variant="caption" color="primary.main" fontWeight={600}>
+            现在是 {currentHour}:00
+          </Typography>
+        </Box>
+      )}
+
       {/* Time grid */}
       <Card sx={{ borderRadius: 3, overflow: 'hidden' }} elevation={0}>
         {HOURS.map((hour, hourIdx) => {
@@ -322,8 +384,19 @@ function DailySchedule() {
           const checkin = getCheckinForHour(hour);
           const isLast = hourIdx === HOURS.length - 1;
 
+          const isCurrentHour = isToday && hour === currentHour;
+
           return (
-            <Box key={hour}>
+            <Box
+              key={hour}
+              ref={(el: HTMLDivElement | null) => { hourRefs.current[hour] = el; }}
+              sx={{
+                ...(isCurrentHour && {
+                  bgcolor: '#7C3AED06',
+                  borderLeft: '3px solid #7C3AED',
+                }),
+              }}
+            >
               {/* Hour row */}
               <Box sx={{ display: 'flex', minHeight: { xs: 64, sm: 72 } }}>
                 {/* Time label column */}
@@ -337,10 +410,15 @@ function DailySchedule() {
                     pt: 1.5,
                     borderRight: '1px solid',
                     borderColor: 'divider',
-                    bgcolor: '#FAFAFA',
+                    bgcolor: isCurrentHour ? '#7C3AED10' : '#FAFAFA',
                   }}
                 >
-                  <Typography variant="body2" fontWeight={600} color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+                  <Typography
+                    variant="body2"
+                    fontWeight={isCurrentHour ? 800 : 600}
+                    color={isCurrentHour ? 'primary.main' : 'text.secondary'}
+                    sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
+                  >
                     {hour}:00
                   </Typography>
                   {checkin && (
@@ -451,19 +529,20 @@ function DailySchedule() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        py: 1,
+                        py: isCurrentHour ? 1.5 : 1,
                         borderRadius: 2,
-                        border: '1px dashed',
-                        borderColor: 'divider',
+                        border: isCurrentHour ? '2px dashed' : '1px dashed',
+                        borderColor: isCurrentHour ? '#7C3AED50' : 'divider',
                         cursor: 'pointer',
                         transition: 'all 0.15s',
+                        bgcolor: isCurrentHour ? '#7C3AED08' : 'transparent',
                         '&:hover': { borderColor: 'primary.main', bgcolor: '#F8F7FF' },
                       }}
                       onClick={() => handleOpenAdd(hour)}
                     >
-                      <AddIcon sx={{ fontSize: 16, color: 'text.disabled', mr: 0.5 }} />
-                      <Typography variant="caption" color="text.disabled">
-                        添加任务
+                      <AddIcon sx={{ fontSize: 16, color: isCurrentHour ? 'primary.main' : 'text.disabled', mr: 0.5 }} />
+                      <Typography variant="caption" color={isCurrentHour ? 'primary.main' : 'text.disabled'} fontWeight={isCurrentHour ? 600 : 400}>
+                        {isCurrentHour ? '当前小时暂无安排 — 点击添加' : '添加任务'}
                       </Typography>
                     </Box>
                   )}
