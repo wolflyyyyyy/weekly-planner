@@ -100,6 +100,12 @@ function DailySchedule() {
   const [dayPlanLoading, setDayPlanLoading] = useState(false);
   const [dayPlanExpanded, setDayPlanExpanded] = useState(false);
 
+  // Mounted ref (skip state updates if navigated away)
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
+
   // Current hour for highlighting
   const now = new Date();
   const isToday = dateStr === format(now, 'yyyy-MM-dd');
@@ -303,12 +309,19 @@ function DailySchedule() {
     setDayPlanLoading(true);
     try {
       const newBlocks = await generateDayScheduleWithAI(dayGoal, dayLabel, dayBudget, settings);
-      persistBlocks(newBlocks);
-      setDayPlanExpanded(false);
+      // Always persist to localStorage (survives navigation)
+      const dayData = getDayBlocks(weekKey, dateStr) || { blocks: [] };
+      saveDayBlocks(weekKey, dateStr, { ...dayData, blocks: newBlocks });
+      if (isMountedRef.current) {
+        setBlocks(newBlocks);
+        setDayPlanExpanded(false);
+        setDayPlanLoading(false);
+      }
     } catch (err) {
-      alert(`生成失败：${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setDayPlanLoading(false);
+      if (isMountedRef.current) {
+        alert(`生成失败：${err instanceof Error ? err.message : String(err)}`);
+        setDayPlanLoading(false);
+      }
     }
   };
 
