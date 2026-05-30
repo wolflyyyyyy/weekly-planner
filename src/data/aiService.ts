@@ -151,6 +151,7 @@ export async function sendChatMessage(
       messages,
       temperature: 0.7,
       max_tokens: 4096,
+      stream: false,
     }),
   });
 
@@ -161,7 +162,10 @@ export async function sendChatMessage(
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('Empty response from API');
+  if (!content) {
+    console.error('[AI] Empty response. Full API response:', JSON.stringify(data, null, 2));
+    throw new Error(`API 返回为空，请检查模型名是否正确（当前：${settings.model}）。响应：${JSON.stringify(data).slice(0, 200)}`);
+  }
 
   // Record token usage
   const usage = data.usage;
