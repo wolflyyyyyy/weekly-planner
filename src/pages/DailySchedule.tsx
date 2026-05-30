@@ -18,6 +18,8 @@ import {
   CircularProgress,
   Tooltip,
   Divider,
+  Slider,
+  Collapse,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -26,6 +28,9 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import NoteAddIcon from '@mui/icons-material/NoteAdd';
 import EditIcon from '@mui/icons-material/Edit';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import {
   format,
   parseISO,
@@ -36,7 +41,9 @@ import { zhCN } from 'date-fns/locale';
 import {
   TimeBlock as TimeBlockType,
   HourlyCheckin,
-  DAY_NAMES,
+  TimeBudget,
+  DEFAULT_BUDGET,
+  ALL_DAY_NAMES,
   DAY_LABELS,
   BLOCK_TYPE_LABELS,
   BLOCK_TYPE_COLORS,
@@ -53,7 +60,7 @@ import {
   loadSettings,
   getGoals,
 } from '../data/storage';
-import { generateKnowledgeCardWithAI } from '../data/aiService';
+import { generateKnowledgeCardWithAI, generateDayScheduleWithAI } from '../data/aiService';
 import type { KnowledgeCard } from '../types';
 
 // Fixed time grid: 10:00 to 19:00
@@ -76,7 +83,7 @@ function DailySchedule() {
   // Day info
   const weekMonday = startOfWeek(date, { weekStartsOn: 1 });
   const dayIdx = Math.floor((date.getTime() - weekMonday.getTime()) / (1000 * 60 * 60 * 24));
-  const dayName = DAY_NAMES[dayIdx] || 'Monday';
+  const dayName = ALL_DAY_NAMES[dayIdx] || 'Monday';
   const dayLabel = DAY_LABELS[dayName] || '';
 
   // Data state
@@ -86,6 +93,12 @@ function DailySchedule() {
   const [todayGoal, setTodayGoal] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [genCardLoading, setGenCardLoading] = useState(false);
+
+  // Daily planning state
+  const [dayGoal, setDayGoal] = useState('');
+  const [dayBudget, setDayBudget] = useState<TimeBudget>({ ...DEFAULT_BUDGET });
+  const [dayPlanLoading, setDayPlanLoading] = useState(false);
+  const [dayPlanExpanded, setDayPlanExpanded] = useState(false);
 
   // Current hour for highlighting
   const now = new Date();
@@ -279,6 +292,26 @@ function DailySchedule() {
     setCheckinOpen(false);
   };
 
+  // Daily plan AI generate
+  const handleGenerateDayPlan = async () => {
+    if (!dayGoal.trim()) return;
+    const settings = loadSettings();
+    if (!settings.apiKey) {
+      alert('请先在设置中配置 API');
+      return;
+    }
+    setDayPlanLoading(true);
+    try {
+      const newBlocks = await generateDayScheduleWithAI(dayGoal, dayLabel, dayBudget, settings);
+      persistBlocks(newBlocks);
+      setDayPlanExpanded(false);
+    } catch (err) {
+      alert(`生成失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDayPlanLoading(false);
+    }
+  };
+
   // Stats
   const completedCount = blocks.filter((b) => b.completed).length;
   const totalCount = blocks.length;
@@ -366,6 +399,101 @@ function DailySchedule() {
           </CardContent>
         </Card>
       )}
+
+      {/* Daily Planning */}
+      <Card
+        sx={{
+          mb: 2,
+          borderRadius: 3,
+          background: 'linear-gradient(135deg, #F59E0B08, #F59E0B15)',
+          border: '1px solid #F59E0B20',
+        }}
+        elevation={0}
+      >
+        <CardContent
+          sx={{ py: 1.5, '&:last-child': { pb: 1.5 }, cursor: 'pointer' }}
+          onClick={() => setDayPlanExpanded(!dayPlanExpanded)}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <AutoAwesomeIcon sx={{ fontSize: 18, color: '#F59E0B' }} />
+              <Typography variant="body2" fontWeight={600} color="#B45309">
+                每日安排
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                — AI 帮你规划今天的每小时任务
+              </Typography>
+            </Box>
+            {dayPlanExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+          </Box>
+        </CardContent>
+        <Collapse in={dayPlanExpanded}>
+          <Box sx={{ px: 2, pb: 2, pt: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              label="今天想做什么？"
+              value={dayGoal}
+              onChange={(e) => setDayGoal(e.target.value)}
+              size="small"
+              fullWidth
+              multiline
+              rows={2}
+              placeholder="描述今天的目标，例如：完成项目报告、学习 React Hooks、整理文档..."
+              onClick={(e) => e.stopPropagation()}
+            />
+            <Box onClick={(e) => e.stopPropagation()}>
+              <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ mb: 1, display: 'block' }}>
+                时间预算（小时）
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="caption" color="#7C3AED" fontWeight={600}>深度 {dayBudget.deep}h</Typography>
+                  <Slider
+                    value={dayBudget.deep}
+                    onChange={(_, v) => setDayBudget((b) => ({ ...b, deep: v as number }))}
+                    min={1} max={7} step={0.5}
+                    size="small"
+                    sx={{ color: '#7C3AED' }}
+                  />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="caption" color="#F59E0B" fontWeight={600}>缓冲 {dayBudget.buffer}h</Typography>
+                  <Slider
+                    value={dayBudget.buffer}
+                    onChange={(_, v) => setDayBudget((b) => ({ ...b, buffer: v as number }))}
+                    min={0} max={4} step={0.5}
+                    size="small"
+                    sx={{ color: '#F59E0B' }}
+                  />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="caption" color="#10B981" fontWeight={600}>休息 {dayBudget.break}h</Typography>
+                  <Slider
+                    value={dayBudget.break}
+                    onChange={(_, v) => setDayBudget((b) => ({ ...b, break: v as number }))}
+                    min={0.5} max={4} step={0.5}
+                    size="small"
+                    sx={{ color: '#10B981' }}
+                  />
+                </Box>
+              </Box>
+            </Box>
+            <Button
+              variant="contained"
+              onClick={handleGenerateDayPlan}
+              disabled={!dayGoal.trim() || dayPlanLoading}
+              startIcon={dayPlanLoading ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+              sx={{
+                borderRadius: 2,
+                background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                '&:hover': { background: 'linear-gradient(135deg, #D97706, #B45309)' },
+                alignSelf: 'flex-start',
+              }}
+            >
+              {dayPlanLoading ? '生成中...' : 'AI 生成今日计划'}
+            </Button>
+          </Box>
+        </Collapse>
+      </Card>
 
       {/* Current hour indicator */}
       {isToday && HOURS.includes(currentHour) && (

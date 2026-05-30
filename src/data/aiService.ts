@@ -221,6 +221,71 @@ export async function generateScheduleWithAI(
 }
 
 /**
+ * Call LLM API to generate a single day's schedule.
+ * Used by the "每日安排" feature.
+ */
+export async function generateDayScheduleWithAI(
+  dayGoal: string,
+  dayLabel: string,
+  budget: TimeBudget,
+  settings: AISettings
+): Promise<TimeBlock[]> {
+  if (!settings.apiKey || !settings.apiEndpoint) {
+    throw new Error('请先在设置中配置 API');
+  }
+
+  const systemPrompt = `你是一个专业的日计划助手。用户给出今天的目标和时间预算，请生成今天的小时级任务计划。
+
+请严格按照以下 JSON 格式输出，不要添加任何额外文字：
+
+{
+  "blocks": [
+    {"id": "day-01", "time": "10:00-10:50", "type": "deep", "task": "具体任务描述"},
+    {"id": "day-02", "time": "10:50-11:00", "type": "break", "task": "休息"},
+    {"id": "day-03", "time": "11:00-11:50", "type": "deep", "task": "具体任务描述"}
+  ]
+}
+
+规则：
+- type 可选值："deep"（深度工作）、"buffer"（缓冲/杂务）、"break"（休息）
+- 时间从 10:00 开始，到 19:00 结束
+- deep 任务每个 50 分钟，buffer 任务每个 40 分钟，break 休息 10-40 分钟
+- 午休安排 40 分钟 break（时间大约在 12:00-12:40）
+- deep 总时长约为 ${budget.deep} 小时
+- buffer 总时长约为 ${budget.buffer} 小时
+- break 总时长约为 ${budget.break} 小时
+- task 描述要具体可执行，使用动词开头
+- id 格式为 "day-序号"
+- 确保时间从 10:00 连续排列到 19:00，不能有间隙或重叠
+
+【风格要求】
+${settings.systemPrompt}`;
+
+  const userPrompt = `今日目标：${dayGoal}
+
+时间预算：深度工作 ${budget.deep}h / 缓冲 ${budget.buffer}h / 休息 ${budget.break}h
+
+请生成今天的任务计划，严格按 JSON 格式输出。`;
+
+  try {
+    const content = await sendChatMessage(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      settings
+    );
+
+    const jsonStr = extractJSON(content);
+    const parsed = JSON.parse(jsonStr);
+    return normalizeBlocks(parsed.blocks || [], 'day');
+  } catch (err) {
+    console.error('[AI] Day schedule generation failed:', err);
+    throw err;
+  }
+}
+
+/**
  * Test the API connection by sending a minimal request.
  * Returns { ok: true } or { ok: false, error: string }.
  */

@@ -103,6 +103,8 @@ export const DAY_LABELS: Record<string, string> = {
   Wednesday: '周三',
   Thursday: '周四',
   Friday: '周五',
+  Saturday: '周六',
+  Sunday: '周日',
 };
 
 export const DAY_SHORT: Record<string, string> = {
@@ -111,7 +113,14 @@ export const DAY_SHORT: Record<string, string> = {
   Wednesday: '三',
   Thursday: '四',
   Friday: '五',
+  Saturday: '六',
+  Sunday: '日',
 };
+
+// All 7 days for daily schedule
+export const ALL_DAY_NAMES = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+] as const;
 
 export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   deep: '深度工作',
