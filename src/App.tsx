@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import { Box, CircularProgress } from '@mui/material';
 import Layout from './components/Layout';
 import WeeklyPlanner from './pages/WeeklyPlanner';
@@ -14,6 +14,7 @@ import { isOnline } from './lib/supabase';
 
 function App() {
   const [ready, setReady] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     (async () => {
@@ -41,7 +42,7 @@ function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<WeeklyPlanner />} />
-        <Route path="/day/:date" element={<DailySchedule />} />
+        <Route path="/day/:date" element={<DailySchedule key={location.pathname} />} />
         <Route path="/knowledge" element={<KnowledgeCards />} />
         <Route path="/review" element={<WeeklyReview />} />
         <Route path="/settings" element={<Settings />} />
