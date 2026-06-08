@@ -147,7 +147,7 @@ export async function sendChatMessage(
       model: settings.model,
       messages,
       temperature: 0.7,
-      max_tokens: 16384,
+      max_tokens: 8192,
       stream: false,
     }),
   });
