@@ -146,7 +146,9 @@ function DailySchedule() {
   // Load data
   useEffect(() => {
     const dayData = getDayBlocks(weekKey, dateStr);
-    setBlocks(dayData?.blocks ?? []);
+    const loadedBlocks = dayData?.blocks ?? [];
+    console.log(`[Daily] 加载 ${dateStr} (${dayName}), weekKey=${weekKey}, blocks=${loadedBlocks.length}`);
+    setBlocks(loadedBlocks);
     setCheckins(dayData?.checkins ?? []);
     setDailySummary(getDailySummary(weekKey, dateStr));
 
