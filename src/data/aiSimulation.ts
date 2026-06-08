@@ -19,7 +19,11 @@ export async function generateSchedule(
   const result: Record<string, TimeBlock[]> = {};
 
   for (const day of days) {
-    const goal = goals[day] || '待安排';
+    const goal = goals[day]?.trim();
+    if (!goal) {
+      result[day] = [];  // Skip days with no goal — don't generate, don't touch
+      continue;
+    }
     result[day] = generateDayBlocks(day, goal, budget);
   }
 

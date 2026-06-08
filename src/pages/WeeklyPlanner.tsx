@@ -147,15 +147,18 @@ function WeeklyPlanner() {
       const settings = loadSettings();
       const result: ScheduleResult = await generateScheduleWithAI(goals, budget, settings);
 
-      // Save to localStorage for each day
+      // Only save days that were generated (non-empty), leave others untouched
       for (let i = 0; i < DAY_NAMES.length; i++) {
         const dayName = DAY_NAMES[i];
-        const dateStr = format(days[i], 'yyyy-MM-dd');
-        const blocks = result.schedule[dayName] || [];
-        saveDayBlocks(weekKey, dateStr, { blocks });
+        const blocks = result.schedule[dayName];
+        if (blocks && blocks.length > 0) {
+          const dateStr = format(days[i], 'yyyy-MM-dd');
+          saveDayBlocks(weekKey, dateStr, { blocks });
+        }
       }
 
-      setSchedule(result.schedule);
+      // Merge with existing schedule — don't clear days that weren't regenerated
+      setSchedule(prev => ({ ...prev, ...result.schedule }));
       setScheduleGenerated(true);
       setGenSource(result.source);
       if (result.error) setGenError(result.error);

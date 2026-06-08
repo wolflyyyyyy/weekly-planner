@@ -247,8 +247,15 @@ export async function generateScheduleWithAI(
   };
   const systemPrompt = buildDaySystemPrompt(settings, budget);
 
-  for (const day of DAY_NAMES) {
-    const dayGoal = goals[day] || '待安排';
+  // Skip days with empty goals — don't generate, don't touch existing data
+  const daysToGenerate = DAY_NAMES.filter(day => goals[day]?.trim());
+  const skippedDays = DAY_NAMES.filter(day => !goals[day]?.trim());
+  if (skippedDays.length > 0) {
+    console.log(`[AI] 跳过无目标的天: ${skippedDays.map(d => dayLabels[d]).join('、')}`);
+  }
+
+  for (const day of daysToGenerate) {
+    const dayGoal = goals[day]!;
     const userPrompt = buildDayUserPrompt(dayLabels[day], dayGoal, budget);
 
     try {
