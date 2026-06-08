@@ -310,7 +310,7 @@ export default function Settings() {
             fullWidth
             size="small"
             sx={{ mb: 2 }}
-            helperText="填域名即可，如 https://api.deepseek.com 或 https://api.openai.com"
+            helperText="填 API 地址，如 https://api.deepseek.com。第三方代理需填到 /v1，如 https://xxx.com/anthropic/v1"
           />
 
           <TextField
