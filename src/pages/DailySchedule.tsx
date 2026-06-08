@@ -143,6 +143,10 @@ function DailySchedule() {
   const [checkinNote, setCheckinNote] = useState('');
   const [checkinDone, setCheckinDone] = useState<boolean[]>([false, false, false]);
 
+  // Drag and drop state
+  const [draggingBlock, setDraggingBlock] = useState<TimeBlockType | null>(null);
+  const [dragOverHour, setDragOverHour] = useState<string | null>(null);
+
   // Load data
   useEffect(() => {
     const dayData = getDayBlocks(weekKey, dateStr);
@@ -210,12 +214,12 @@ function DailySchedule() {
 
   const handleSaveAdd = () => {
     if (!addTask.trim()) return;
-    const duration = addType === 'deep' ? 50 : addType === 'buffer' ? 40 : 10;
-    const startMin = 0;
-    const endMin = startMin + duration;
+    const duration = addType === 'deep' ? 60 : 30;
+    const endH = Number(addHour) + (duration >= 60 ? 1 : 0);
+    const endM = duration % 60;
     const newBlock: TimeBlockType = {
       id: `${dayName}-${Date.now()}`,
-      time: `${addHour}:${String(startMin).padStart(2, '0')}-${String(Number(addHour) + (endMin >= 60 ? 1 : 0)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`,
+      time: `${addHour}:00-${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`,
       type: addType,
       task: addTask.trim(),
       completed: false,
@@ -278,6 +282,59 @@ function DailySchedule() {
   // Delete block
   const handleDeleteBlock = (blockId: string) => {
     persistBlocks(blocks.filter((b) => b.id !== blockId));
+  };
+
+  // Drag and drop
+  const handleDragStart = (block: TimeBlockType) => {
+    setDraggingBlock(block);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingBlock(null);
+    setDragOverHour(null);
+  };
+
+  const handleDragOverHour = (e: React.DragEvent, hour: string) => {
+    e.preventDefault();
+    setDragOverHour(hour);
+  };
+
+  const handleDropOnHour = (targetHour: string) => {
+    if (!draggingBlock) return;
+    setDragOverHour(null);
+
+    // Calculate duration from the block's time range
+    const timeMatch = draggingBlock.time.match(/^(\d+):(\d+)-(\d+):(\d+)$/);
+    let durationMin = 60; // default
+    if (timeMatch) {
+      const startMin = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+      const endMin = parseInt(timeMatch[3]) * 60 + parseInt(timeMatch[4]);
+      durationMin = endMin - startMin;
+    }
+
+    // Calculate new time string based on target hour
+    const startH = parseInt(targetHour);
+    const startM = 0;
+    const endTotal = startH * 60 + startM + durationMin;
+    const endH = Math.floor(endTotal / 60);
+    const endM = endTotal % 60;
+    const newTime = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}-${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+
+    // Update the block's time
+    const updated = blocks.map((b) =>
+      b.id === draggingBlock.id
+        ? {
+            ...b,
+            time: newTime,
+            modifications: [
+              ...b.modifications,
+              { time: new Date().toISOString(), original: b.time, new: newTime, reason: '拖拽调整' },
+            ],
+          }
+        : b
+    );
+    persistBlocks(updated);
+    setDraggingBlock(null);
   };
 
   // Checkin
@@ -547,14 +604,24 @@ function DailySchedule() {
 
           const isCurrentHour = isToday && hour === currentHour;
 
+          const isDragOver = dragOverHour === hour;
+
           return (
             <Box
               key={hour}
               ref={(el: HTMLDivElement | null) => { hourRefs.current[hour] = el; }}
+              onDragOver={(e) => handleDragOverHour(e, hour)}
+              onDragLeave={() => setDragOverHour(null)}
+              onDrop={() => handleDropOnHour(hour)}
               sx={{
                 ...(isCurrentHour && {
                   bgcolor: '#7C3AED06',
                   borderLeft: '3px solid #7C3AED',
+                }),
+                ...(isDragOver && {
+                  bgcolor: '#7C3AED12',
+                  outline: '2px dashed #7C3AED60',
+                  outlineOffset: -2,
                 }),
               }}
             >
@@ -594,9 +661,13 @@ function DailySchedule() {
                   {/* Existing blocks */}
                   {hourBlocks.map((block) => {
                     const colors = getBlockColors(block.type);
+                    const isDragging = draggingBlock?.id === block.id;
                     return (
                       <Box
                         key={block.id}
+                        draggable
+                        onDragStart={() => handleDragStart(block)}
+                        onDragEnd={handleDragEnd}
                         sx={{
                           display: 'flex',
                           alignItems: 'center',
@@ -606,10 +677,11 @@ function DailySchedule() {
                           borderRadius: 2,
                           bgcolor: colors.bg,
                           borderLeft: `3px solid ${colors.border}`,
-                          opacity: block.completed ? 0.6 : 1,
-                          cursor: 'pointer',
+                          opacity: isDragging ? 0.4 : block.completed ? 0.6 : 1,
+                          cursor: 'grab',
                           transition: 'all 0.15s',
                           '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.06)' },
+                          '&:active': { cursor: 'grabbing' },
                         }}
                         onClick={() => handleToggleComplete(block)}
                       >

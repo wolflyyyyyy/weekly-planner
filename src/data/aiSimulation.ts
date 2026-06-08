@@ -31,7 +31,8 @@ export async function generateSchedule(
 }
 
 /**
- * Generate time blocks for a single day using the budget.
+ * Generate time blocks for a single day using 30-minute granularity.
+ * All blocks align to :00 or :30 boundaries.
  */
 function generateDayBlocks(
   day: string,
@@ -41,101 +42,70 @@ function generateDayBlocks(
   const blocks: TimeBlock[] = [];
   let id = 1;
 
-  const deepHours = budget.deep;
-  const bufferHours = budget.buffer;
-  const breakHours = budget.break;
+  // Block counts based on 30-min granularity
+  const deepBlockCount = budget.deep;     // 60min each
+  const bufferBlockCount = budget.buffer * 2;  // 30min each
+  const breakBlockCount = budget.break * 2;    // 30min each (including lunch)
 
-  // Template tasks per day based on day of week
-  const deepTasks = splitGoalIntoTasks(goal, deepHours, day);
+  const deepTasks = splitGoalIntoTasks(goal, deepBlockCount, day);
   const bufferTasks = getBufferTasks(day);
   const breakTasks = getBreakTasks(day);
 
-  // Build a timeline from 10:00 to 19:00
-  // Pattern: 50min work → 10min break (for deep), or 30-50min blocks for buffer
-  let currentMinute = 0; // minutes from 10:00
-
-  let deepIdx = 0;
-  let bufferIdx = 0;
-  let breakIdx = 0;
-
-  // Allocate deep work blocks (50min each)
-  const deepBlockCount = deepHours; // 1 block = ~1 hour (50+10)
-  const bufferBlockCount = Math.ceil(bufferHours * 60 / 40); // ~40min each
-  const totalBreakSlots = deepBlockCount + bufferBlockCount + 2; // short breaks + lunch + end
-
-  // Simplified scheduler: interleave deep and buffer with breaks
+  // Build schedule: interleaved deep/buffer/break, all 30-min aligned
   const schedule: Array<{ duration: number; type: 'deep' | 'buffer' | 'break' }> = [];
-
-  // Morning deep work session (2-3 blocks)
-  const morningDeep = Math.min(3, deepBlockCount);
-  for (let i = 0; i < morningDeep; i++) {
-    schedule.push({ duration: 50, type: 'deep' });
-    schedule.push({ duration: 10, type: 'break' });
-  }
-
-  // Lunch break
-  schedule.push({ duration: 40, type: 'break' });
-
-  // Afternoon deep work
-  const afternoonDeep = deepBlockCount - morningDeep;
-  for (let i = 0; i < afternoonDeep; i++) {
-    schedule.push({ duration: 50, type: 'deep' });
-    schedule.push({ duration: 10, type: 'break' });
-  }
-
-  // Buffer blocks interspersed
-  const bufferSlots: number[] = [];
-  // Insert buffers between deep work blocks where possible
-  for (let i = 0; i < bufferBlockCount; i++) {
-    bufferSlots.push(i * 2 + 1); // after some deep blocks
-  }
-
-  // Actually, let me rebuild the schedule more carefully
-  // Clear and rebuild
-  schedule.length = 0;
-
   let remainingDeep = deepBlockCount;
   let remainingBuffer = bufferBlockCount;
-  let isAfternoon = false;
+  let remainingBreak = breakBlockCount;
 
-  // Morning: 3 deep blocks max
-  const morningDeepCount = Math.min(3, remainingDeep);
-  for (let i = 0; i < morningDeepCount && currentMinute < 540; i++) {
-    schedule.push({ duration: 50, type: 'deep' });
+  // Morning: deep blocks
+  const morningDeep = Math.min(3, remainingDeep);
+  for (let i = 0; i < morningDeep; i++) {
+    schedule.push({ duration: 60, type: 'deep' });
     remainingDeep--;
-    if (i < morningDeepCount - 1 || remainingDeep > 0 || remainingBuffer > 0) {
-      schedule.push({ duration: 10, type: 'break' });
+    if (remainingBreak > 0 && (i < morningDeep - 1 || remainingDeep > 0 || remainingBuffer > 0)) {
+      schedule.push({ duration: 30, type: 'break' });
+      remainingBreak--;
     }
   }
 
   // Lunch
-  schedule.push({ duration: 40, type: 'break' });
+  if (remainingBreak > 0) {
+    schedule.push({ duration: 30, type: 'break' });
+    remainingBreak--;
+  }
 
-  // Afternoon: remaining deep + buffer
-  const afternoonItems: Array<{ duration: number; type: 'deep' | 'buffer' | 'break' }> = [];
-
-  // Alternate: deep, buffer, deep, buffer, etc.
+  // Afternoon: alternate deep, buffer, break
   while (remainingDeep > 0 || remainingBuffer > 0) {
     if (remainingDeep > 0) {
-      afternoonItems.push({ duration: 50, type: 'deep' });
+      schedule.push({ duration: 60, type: 'deep' });
       remainingDeep--;
-      afternoonItems.push({ duration: 10, type: 'break' });
+    }
+    if (remainingBreak > 0 && (remainingDeep > 0 || remainingBuffer > 0)) {
+      schedule.push({ duration: 30, type: 'break' });
+      remainingBreak--;
     }
     if (remainingBuffer > 0) {
-      afternoonItems.push({ duration: 40, type: 'buffer' });
+      schedule.push({ duration: 30, type: 'buffer' });
       remainingBuffer--;
-      if (remainingDeep > 0 || remainingBuffer > 0) {
-        afternoonItems.push({ duration: 10, type: 'break' });
-      }
+    }
+    if (remainingBreak > 0 && (remainingDeep > 0 || remainingBuffer > 0)) {
+      schedule.push({ duration: 30, type: 'break' });
+      remainingBreak--;
     }
   }
 
-  schedule.push(...afternoonItems);
+  // Remaining breaks
+  while (remainingBreak > 0) {
+    schedule.push({ duration: 30, type: 'break' });
+    remainingBreak--;
+  }
 
-  // End-of-day wrap-up
-  schedule.push({ duration: 20, type: 'break' });
+  // Convert schedule to TimeBlocks
+  let currentMinute = 0;
+  let deepIdx = 0;
+  let bufferIdx = 0;
+  let breakIdx = 0;
 
-  // Now convert schedule to TimeBlocks
   for (const item of schedule) {
     const start = minuteToTime(currentMinute);
     const end = minuteToTime(currentMinute + item.duration);

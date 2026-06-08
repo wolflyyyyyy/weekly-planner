@@ -194,12 +194,13 @@ function buildDaySystemPrompt(settings: AISettings, budget: TimeBudget): string 
   return `你是日计划助手。生成一天的任务计划。
 
 严格输出 JSON，无额外文字：
-{"blocks":[{"id":"day-01","time":"10:00-10:50","type":"deep","task":"任务描述"},...]}
+{"blocks":[{"id":"day-01","time":"10:00-11:00","type":"deep","task":"任务描述"},...]}
 
 规则：
-- type: "deep"(50min) / "buffer"(40min) / "break"(10-40min)
+- 所有时间必须对齐到 :00 或 :30（半小时刻度），不允许出现 :10、:40、:50 等
+- type: "deep"(60min) / "buffer"(30min) / "break"(30min)
 - 时间 10:00→19:00 连续无间隙
-- 午休 40min break 约 12:00
+- 午休 30min break 约 12:00-12:30
 - deep 约${budget.deep}h, buffer 约${budget.buffer}h, break 约${budget.break}h
 - task 用动词开头，具体可执行
 
