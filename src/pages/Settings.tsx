@@ -304,13 +304,13 @@ export default function Settings() {
 
           <TextField
             label="API 端点"
-            placeholder="https://api.openai.com/v1/chat/completions"
+            placeholder="https://api.deepseek.com"
             value={settings.apiEndpoint}
             onChange={(e) => update('apiEndpoint', e.target.value)}
             fullWidth
             size="small"
             sx={{ mb: 2 }}
-            helperText="支持 OpenAI 兼容接口（OpenAI / DeepSeek / 通义 / 本地模型等）"
+            helperText="填域名即可，如 https://api.deepseek.com 或 https://api.openai.com"
           />
 
           <TextField

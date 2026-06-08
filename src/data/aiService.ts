@@ -3,64 +3,6 @@ import { generateSchedule } from './aiSimulation';
 import { recordUsage } from './tokenUsage';
 
 /**
- * Build the system prompt that instructs the LLM to return structured JSON.
- */
-function buildSystemPrompt(settings: AISettings, budget: TimeBudget): string {
-  return `你是一个专业的周计划助手。用户会给出周一到周五的每日目标和时间预算。
-
-请严格按照以下 JSON 格式输出，不要添加任何额外文字、解释或 markdown 标记：
-
-{
-  "Monday": [
-    {"id": "Monday-01", "time": "10:00-10:50", "type": "deep", "task": "具体任务描述"},
-    {"id": "Monday-02", "time": "10:50-11:00", "type": "break", "task": "休息"},
-    {"id": "Monday-03", "time": "11:00-11:50", "type": "deep", "task": "具体任务描述"}
-  ],
-  "Tuesday": [...],
-  "Wednesday": [...],
-  "Thursday": [...],
-  "Friday": [...]
-}
-
-规则：
-- type 可选值："deep"（深度工作）、"buffer"（缓冲/杂务）、"break"（休息）
-- 时间从 10:00 开始，到 19:00 结束
-- deep 任务每个 50 分钟，buffer 任务每个 40 分钟，break 休息 10-40 分钟
-- 午休安排 40 分钟 break（时间大约在 12:00-12:40）
-- 每天 deep 总时长约为 ${budget.deep} 小时
-- 每天 buffer 总时长约为 ${budget.buffer} 小时
-- 每天 break 总时长约为 ${budget.break} 小时
-- task 描述要具体可执行，使用动词开头
-- id 格式为 "星期-序号"，如 Monday-01, Tuesday-03
-- 每天的 block 数量根据时间预算动态计算
-- 确保每天时间从 10:00 连续排列到 19:00，时间不能有间隙或重叠
-
-【风格要求】
-${settings.systemPrompt}`;
-}
-
-/**
- * Build the user prompt with goals and budget.
- */
-function buildUserPrompt(goals: Goals, budget: TimeBudget): string {
-  const lines = DAY_NAMES.map((day) => {
-    const label =
-      day === 'Monday' ? '周一' :
-      day === 'Tuesday' ? '周二' :
-      day === 'Wednesday' ? '周三' :
-      day === 'Thursday' ? '周四' : '周五';
-    return `- ${label}（${day}）：${goals[day] || '待安排'}`;
-  });
-
-  return `本周每日目标：
-${lines.join('\n')}
-
-时间预算：深度工作 ${budget.deep}h / 缓冲 ${budget.buffer}h / 休息 ${budget.break}h
-
-请生成本周的每日任务计划，严格按 JSON 格式输出。`;
-}
-
-/**
  * Extract JSON from LLM response, handling markdown code blocks.
  */
 function extractJSON(text: string): string {
@@ -75,6 +17,61 @@ function extractJSON(text: string): string {
     return jsonMatch[0];
   }
   return text.trim();
+}
+
+/**
+ * Attempt to repair truncated JSON from LLM responses.
+ * When the model hits max_tokens mid-output, the JSON is cut off.
+ * This tries to close any open strings, objects, and arrays.
+ */
+function repairTruncatedJSON(json: string): string {
+  let s = json.trim();
+
+  // If it ends with a comma, remove it (trailing comma before truncation)
+  s = s.replace(/,\s*$/, '');
+
+  // If inside an unclosed string, close it
+  let inString = false;
+  let escapeNext = false;
+  for (let i = 0; i < s.length; i++) {
+    if (escapeNext) { escapeNext = false; continue; }
+    if (s[i] === '\\') { escapeNext = true; continue; }
+    if (s[i] === '"') inString = !inString;
+  }
+  if (inString) s += '"';
+
+  // Count open brackets/braces and close them
+  let braces = 0;
+  let brackets = 0;
+  inString = false;
+  escapeNext = false;
+  for (let i = 0; i < s.length; i++) {
+    if (escapeNext) { escapeNext = false; continue; }
+    if (s[i] === '\\') { escapeNext = true; continue; }
+    if (s[i] === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (s[i] === '{') braces++;
+    if (s[i] === '}') braces--;
+    if (s[i] === '[') brackets++;
+    if (s[i] === ']') brackets--;
+  }
+  for (let i = 0; i < braces; i++) s += '}';
+  for (let i = 0; i < brackets; i++) s += ']';
+
+  return s;
+}
+
+/**
+ * Parse JSON with automatic repair for truncated LLM responses.
+ */
+function safeParseJSON(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.warn('[AI] JSON 解析失败，尝试修复截断的 JSON...');
+    const repaired = repairTruncatedJSON(text);
+    return JSON.parse(repaired);
+  }
 }
 
 /**
@@ -101,17 +98,17 @@ function normalizeBlocks(raw: unknown[], dayName: string): TimeBlock[] {
 /**
  * Normalize API endpoint URL.
  * Handles common input patterns:
- *   "https://api.deepseek.com"              → .../v1/chat/completions
- *   "https://api.deepseek.com/v1"           → .../v1/chat/completions
- *   "https://api.deepseek.com/v1/chat/completions" → unchanged
+ *   "https://api.deepseek.com"                    → .../chat/completions
+ *   "https://api.deepseek.com/v1"                 → .../v1/chat/completions
+ *   "https://api.openai.com"                      → .../chat/completions
+ *   "https://api.openai.com/v1/chat/completions"  → unchanged
+ *   "https://dashscope.aliyuncs.com/compatible-mode/v1" → .../v1/chat/completions
  */
 function normalizeEndpoint(endpoint: string): string {
   const url = endpoint.trim().replace(/\/+$/, '');
-  if (url.endsWith('/v1/chat/completions')) return url;
   if (url.endsWith('/chat/completions')) return url;
   if (url.endsWith('/v1')) return url + '/chat/completions';
-  if (url.endsWith('/completions')) return url;
-  return url + '/v1/chat/completions';
+  return url + '/chat/completions';
 }
 
 /**
@@ -150,7 +147,7 @@ export async function sendChatMessage(
       model: settings.model,
       messages,
       temperature: 0.7,
-      max_tokens: 4096,
+      max_tokens: 16384,
       stream: false,
     }),
   });
@@ -161,7 +158,16 @@ export async function sendChatMessage(
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
+  const message = data.choices?.[0]?.message;
+  let content = message?.content || '';
+
+  // Some reasoning models (mimo, deepseek-r1, etc.) put output in reasoning_content
+  // when max_tokens is exhausted before the actual content is generated.
+  if (!content && message?.reasoning_content) {
+    console.warn('[AI] content 为空，尝试从 reasoning_content 提取 JSON');
+    content = message.reasoning_content;
+  }
+
   if (!content) {
     console.error('[AI] Empty response. Full API response:', JSON.stringify(data, null, 2));
     throw new Error(`API 返回为空，请检查模型名是否正确（当前：${settings.model}）。响应：${JSON.stringify(data).slice(0, 200)}`);
@@ -181,47 +187,100 @@ export async function sendChatMessage(
 }
 
 /**
+ * Build a focused system prompt for generating ONE day's schedule.
+ * Much shorter than the weekly prompt — fits within reasoning model token limits.
+ */
+function buildDaySystemPrompt(settings: AISettings, budget: TimeBudget): string {
+  return `你是日计划助手。生成一天的任务计划。
+
+严格输出 JSON，无额外文字：
+{"blocks":[{"id":"day-01","time":"10:00-10:50","type":"deep","task":"任务描述"},...]}
+
+规则：
+- type: "deep"(50min) / "buffer"(40min) / "break"(10-40min)
+- 时间 10:00→19:00 连续无间隙
+- 午休 40min break 约 12:00
+- deep 约${budget.deep}h, buffer 约${budget.buffer}h, break 约${budget.break}h
+- task 用动词开头，具体可执行
+
+${settings.systemPrompt}`;
+}
+
+/**
+ * Build user prompt for a single day.
+ */
+function buildDayUserPrompt(dayLabel: string, dayGoal: string, budget: TimeBudget): string {
+  return `今日目标（${dayLabel}）：${dayGoal || '待安排'}
+时间预算：深度 ${budget.deep}h / 缓冲 ${budget.buffer}h / 休息 ${budget.break}h
+生成今天的任务计划。`;
+}
+
+export interface ScheduleResult {
+  schedule: Record<string, TimeBlock[]>;
+  source: 'ai' | 'template';
+  error?: string;
+}
+
+/**
  * Call a real LLM API (OpenAI-compatible) to generate the schedule.
+ * Uses per-day API calls to stay within reasoning model token limits.
  * Falls back to local simulation if the API is not configured or fails.
  */
 export async function generateScheduleWithAI(
   goals: Goals,
   budget: TimeBudget,
   settings: AISettings
-): Promise<Record<string, TimeBlock[]>> {
+): Promise<ScheduleResult> {
   // If no API key configured, fall back to simulation
   if (!settings.apiKey || !settings.apiEndpoint) {
-    console.log('[AI] No API configured, using local simulation');
-    return generateSchedule(goals, budget);
+    console.log('%c[AI] ⚠️ 未配置 API，使用本地模板生成', 'color: #F59E0B; font-weight: bold; font-size: 14px');
+    return { schedule: await generateSchedule(goals, budget), source: 'template', error: '未配置 API Key 或 Endpoint' };
   }
 
-  const systemPrompt = buildSystemPrompt(settings, budget);
-  const userPrompt = buildUserPrompt(goals, budget);
+  console.log('%c[AI] 🚀 逐天调用 API 生成计划...', 'color: #7C3AED; font-weight: bold; font-size: 14px');
+  console.log('[AI] Endpoint:', normalizeEndpoint(settings.apiEndpoint));
+  console.log('[AI] Model:', settings.model);
 
-  try {
-    const content = await sendChatMessage(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      settings
-    );
+  const result: Record<string, TimeBlock[]> = {};
+  const dayLabels: Record<string, string> = {
+    Monday: '周一', Tuesday: '周二', Wednesday: '周三', Thursday: '周四', Friday: '周五',
+  };
+  const systemPrompt = buildDaySystemPrompt(settings, budget);
 
-    // Parse JSON from response
-    const jsonStr = extractJSON(content);
-    const parsed = JSON.parse(jsonStr);
+  for (const day of DAY_NAMES) {
+    const dayGoal = goals[day] || '待安排';
+    const userPrompt = buildDayUserPrompt(dayLabels[day], dayGoal, budget);
 
-    // Normalize each day's blocks
-    const result: Record<string, TimeBlock[]> = {};
-    for (const day of DAY_NAMES) {
-      result[day] = normalizeBlocks(parsed[day] || [], day);
+    try {
+      console.log(`[AI]   生成 ${dayLabels[day]}（${day}）...`);
+      const content = await sendChatMessage(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        settings
+      );
+
+      const jsonStr = extractJSON(content);
+      const parsed = safeParseJSON(jsonStr) as Record<string, unknown>;
+      result[day] = normalizeBlocks((parsed.blocks || parsed[day] || []) as unknown[], day);
+
+      const firstTask = result[day].find(b => b.type === 'deep')?.task || '(无)';
+      console.log(`[AI]   ✅ ${day}: ${result[day].length} 段, 首任务: ${firstTask}`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[AI]   ❌ ${day} 生成失败:`, err);
+      console.error('%c[AI] 回退到本地模板生成全部计划', 'color: #EF4444; font-weight: bold; font-size: 14px');
+      return {
+        schedule: await generateSchedule(goals, budget),
+        source: 'template',
+        error: `${dayLabels[day]}生成失败: ${errMsg}`,
+      };
     }
-
-    return result;
-  } catch (err) {
-    console.error('[AI] API call failed, falling back to simulation:', err);
-    return generateSchedule(goals, budget);
   }
+
+  console.log('%c[AI] ✅ 全部 5 天生成完成', 'color: #10B981; font-weight: bold; font-size: 14px');
+  return { schedule: result, source: 'ai' };
 }
 
 /**
@@ -281,8 +340,8 @@ ${settings.systemPrompt}`;
     );
 
     const jsonStr = extractJSON(content);
-    const parsed = JSON.parse(jsonStr);
-    return normalizeBlocks(parsed.blocks || [], 'day');
+    const parsed = safeParseJSON(jsonStr) as Record<string, unknown>;
+    return normalizeBlocks((parsed.blocks || []) as unknown[], 'day');
   } catch (err) {
     console.error('[AI] Day schedule generation failed:', err);
     throw err;
@@ -349,7 +408,7 @@ export async function generateKnowledgeCardWithAI(
     );
 
     const jsonStr = extractJSON(content);
-    const parsed = JSON.parse(jsonStr);
+    const parsed = safeParseJSON(jsonStr) as Record<string, unknown>;
 
     return {
       id: `kc-ai-${Date.now()}`,

@@ -62,6 +62,8 @@ export interface WeekData {
     [date: string]: DayData;
   };
   knowledgeCards: KnowledgeCard[];
+  scheduleSource?: 'ai' | 'template';
+  scheduleError?: string;
 }
 
 export interface AISettings {

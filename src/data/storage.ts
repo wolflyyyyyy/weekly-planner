@@ -101,6 +101,28 @@ export function saveDayBlocks(
   saveData(data);
 }
 
+/** Save schedule generation source (ai or template) for a week. */
+export function saveScheduleSource(
+  weekKey: string,
+  source: 'ai' | 'template',
+  error?: string
+): void {
+  const data = loadData();
+  if (!data.weeks[weekKey]) return;
+  data.weeks[weekKey].scheduleSource = source;
+  data.weeks[weekKey].scheduleError = error;
+  saveData(data);
+}
+
+/** Get schedule generation source for a week. */
+export function getScheduleSource(
+  weekKey: string
+): { source?: 'ai' | 'template'; error?: string } {
+  const data = loadData();
+  const week = data.weeks[weekKey];
+  return { source: week?.scheduleSource, error: week?.scheduleError };
+}
+
 /** Get day blocks for a specific date, or undefined. */
 export function getDayBlocks(
   weekKey: string,

@@ -48,9 +48,10 @@ import {
   getOrCreateWeekData,
   saveGoals,
   saveDayBlocks,
+  saveScheduleSource,
   loadSettings,
 } from '../data/storage';
-import { generateScheduleWithAI } from '../data/aiService';
+import { generateScheduleWithAI, type ScheduleResult } from '../data/aiService';
 import TimeBlockComp from '../components/TimeBlock';
 
 /** Calculate week date range: Monday to Friday */
@@ -88,6 +89,8 @@ function WeeklyPlanner() {
   const [schedule, setSchedule] = useState<Record<string, TimeBlockType[]>>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [scheduleGenerated, setScheduleGenerated] = useState(false);
+  const [genSource, setGenSource] = useState<'ai' | 'template' | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
 
   // Edit modal state
   const [editOpen, setEditOpen] = useState(false);
@@ -136,23 +139,27 @@ function WeeklyPlanner() {
   // AI generate schedule
   const handleAIGenerate = async () => {
     setAiLoading(true);
+    setGenError(null);
     try {
       // Save current goals first
       saveGoals(weekKey, goals);
 
       const settings = loadSettings();
-      const generatedSchedule = await generateScheduleWithAI(goals, budget, settings);
+      const result: ScheduleResult = await generateScheduleWithAI(goals, budget, settings);
 
       // Save to localStorage for each day
       for (let i = 0; i < DAY_NAMES.length; i++) {
         const dayName = DAY_NAMES[i];
         const dateStr = format(days[i], 'yyyy-MM-dd');
-        const blocks = generatedSchedule[dayName] || [];
+        const blocks = result.schedule[dayName] || [];
         saveDayBlocks(weekKey, dateStr, { blocks });
       }
 
-      setSchedule(generatedSchedule);
+      setSchedule(result.schedule);
       setScheduleGenerated(true);
+      setGenSource(result.source);
+      if (result.error) setGenError(result.error);
+      saveScheduleSource(weekKey, result.source, result.error);
     } finally {
       setAiLoading(false);
     }
@@ -383,6 +390,16 @@ function WeeklyPlanner() {
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
             📋 生成的周计划
           </Typography>
+          {genSource === 'ai' && (
+            <Alert severity="success" sx={{ mb: 2, fontSize: '0.85rem' }}>
+              ✅ AI 生成 — 已调用 API 逐天生成个性化计划
+            </Alert>
+          )}
+          {genSource === 'template' && (
+            <Alert severity="warning" sx={{ mb: 2, fontSize: '0.85rem' }}>
+              ⚠️ 本地模板生成 — {genError || '未配置 API'}。请在右上角设置中配置 API 以获得个性化计划。
+            </Alert>
+          )}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {DAY_NAMES.map((dayName, idx) => {
               const blocks = schedule[dayName] || [];

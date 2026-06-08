@@ -20,6 +20,7 @@ import {
   Divider,
   Slider,
   Collapse,
+  Alert,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -59,6 +60,7 @@ import {
   addKnowledgeCard,
   loadSettings,
   getGoals,
+  getScheduleSource,
 } from '../data/storage';
 import { generateKnowledgeCardWithAI, generateDayScheduleWithAI } from '../data/aiService';
 import type { KnowledgeCard } from '../types';
@@ -93,6 +95,8 @@ function DailySchedule() {
   const [todayGoal, setTodayGoal] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [genCardLoading, setGenCardLoading] = useState(false);
+  const [scheduleSource, setScheduleSource] = useState<'ai' | 'template' | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   // Daily planning state
   const [dayGoal, setDayGoal] = useState('');
@@ -100,11 +104,11 @@ function DailySchedule() {
   const [dayPlanLoading, setDayPlanLoading] = useState(false);
   const [dayPlanExpanded, setDayPlanExpanded] = useState(false);
 
-  // Mounted ref (skip state updates if navigated away)
-  const isMountedRef = useRef(true);
+  // Track the current date key to detect navigation during async ops
+  const dateKeyRef = useRef(dateStr);
   useEffect(() => {
-    return () => { isMountedRef.current = false; };
-  }, []);
+    dateKeyRef.current = dateStr;
+  }, [dateStr]);
 
   // Current hour for highlighting
   const now = new Date();
@@ -149,6 +153,11 @@ function DailySchedule() {
     // Load today's goal from weekly goals
     const goals = getGoals(weekKey);
     setTodayGoal(goals[dayName] || '');
+
+    // Load schedule generation source
+    const src = getScheduleSource(weekKey);
+    setScheduleSource(src.source ?? null);
+    setScheduleError(src.error ?? null);
 
     setLoaded(true);
   }, [dateStr, weekKey, dayName]);
@@ -307,21 +316,23 @@ function DailySchedule() {
       return;
     }
     setDayPlanLoading(true);
+    const capturedDateStr = dateStr;
+    const capturedWeekKey = weekKey;
     try {
       const newBlocks = await generateDayScheduleWithAI(dayGoal, dayLabel, dayBudget, settings);
-      // Always persist to localStorage (survives navigation)
-      const dayData = getDayBlocks(weekKey, dateStr) || { blocks: [] };
-      saveDayBlocks(weekKey, dateStr, { ...dayData, blocks: newBlocks });
-      if (isMountedRef.current) {
+      // Only save and update if user is still viewing the same day
+      if (dateKeyRef.current === capturedDateStr) {
+        const dayData = getDayBlocks(capturedWeekKey, capturedDateStr) || { blocks: [] };
+        saveDayBlocks(capturedWeekKey, capturedDateStr, { ...dayData, blocks: newBlocks });
         setBlocks(newBlocks);
         setDayPlanExpanded(false);
-        setDayPlanLoading(false);
       }
+      setDayPlanLoading(false);
     } catch (err) {
-      if (isMountedRef.current) {
+      if (dateKeyRef.current === capturedDateStr) {
         alert(`生成失败：${err instanceof Error ? err.message : String(err)}`);
-        setDayPlanLoading(false);
       }
+      setDayPlanLoading(false);
     }
   };
 
@@ -411,6 +422,13 @@ function DailySchedule() {
             </Typography>
           </CardContent>
         </Card>
+      )}
+
+      {/* Schedule source indicator */}
+      {scheduleSource === 'template' && blocks.length > 0 && (
+        <Alert severity="warning" sx={{ mb: 2, fontSize: '0.8rem', borderRadius: 2 }}>
+          ⚠️ 当前计划由本地模板生成 — {scheduleError || '未配置 API'}。在右上角设置中配置 API 可获得 AI 个性化计划。
+        </Alert>
       )}
 
       {/* Daily Planning */}
