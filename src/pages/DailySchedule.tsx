@@ -121,7 +121,9 @@ function DailySchedule() {
 
   // Add task dialog
   const [addOpen, setAddOpen] = useState(false);
-  const [addHour, setAddHour] = useState('');
+  const [addHour, setAddHour] = useState('10');
+  const [addStartM, setAddStartM] = useState(0);
+  const [addDuration, setAddDuration] = useState(60);
   const [addTask, setAddTask] = useState('');
   const [addType, setAddType] = useState<TimeBlockType['type']>('deep');
 
@@ -129,8 +131,10 @@ function DailySchedule() {
   const [editOpen, setEditOpen] = useState(false);
   const [editingBlock, setEditingBlock] = useState<TimeBlockType | null>(null);
   const [editTask, setEditTask] = useState('');
-  const [editTime, setEditTime] = useState('');
   const [editType, setEditType] = useState<TimeBlockType['type']>('deep');
+  const [editStartH, setEditStartH] = useState(10);
+  const [editStartM, setEditStartM] = useState(0);
+  const [editDuration, setEditDuration] = useState(60);
 
   // Complete dialog
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -207,6 +211,8 @@ function DailySchedule() {
   // Add task
   const handleOpenAdd = (hour: string) => {
     setAddHour(hour);
+    setAddStartM(0);
+    setAddDuration(60);
     setAddTask('');
     setAddType('deep');
     setAddOpen(true);
@@ -214,12 +220,12 @@ function DailySchedule() {
 
   const handleSaveAdd = () => {
     if (!addTask.trim()) return;
-    const duration = addType === 'deep' ? 60 : 30;
-    const endH = Number(addHour) + (duration >= 60 ? 1 : 0);
-    const endM = duration % 60;
+    const sH = Number(addHour), sM = addStartM;
+    const eTotal = sH * 60 + sM + addDuration;
+    const eH = Math.floor(eTotal / 60), eM = eTotal % 60;
     const newBlock: TimeBlockType = {
       id: `${dayName}-${Date.now()}`,
-      time: `${addHour}:00-${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`,
+      time: `${String(sH).padStart(2, '0')}:${String(sM).padStart(2, '0')}-${String(eH).padStart(2, '0')}:${String(eM).padStart(2, '0')}`,
       type: addType,
       task: addTask.trim(),
       completed: false,
@@ -253,21 +259,43 @@ function DailySchedule() {
     setCompleteOpen(false);
   };
 
+  // Parse time string "10:00-11:00" into structured fields
+  const parseTimeFields = (timeStr: string) => {
+    const m = timeStr.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+    if (m) {
+      const sH = parseInt(m[1]), sM = parseInt(m[2]);
+      const eH = parseInt(m[3]), eM = parseInt(m[4]);
+      return { startH: sH, startM: sM, duration: (eH * 60 + eM) - (sH * 60 + sM) };
+    }
+    return { startH: 10, startM: 0, duration: 60 };
+  };
+
+  // Build time string from structured fields
+  const buildTimeStr = (sH: number, sM: number, dur: number) => {
+    const eTotal = sH * 60 + sM + dur;
+    const eH = Math.floor(eTotal / 60), eM = eTotal % 60;
+    return `${String(sH).padStart(2, '0')}:${String(sM).padStart(2, '0')}-${String(eH).padStart(2, '0')}:${String(eM).padStart(2, '0')}`;
+  };
+
   // Edit block
   const handleEditBlock = (block: TimeBlockType) => {
     setEditingBlock(block);
     setEditTask(block.task);
-    setEditTime(block.time);
     setEditType(block.type);
+    const { startH, startM, duration } = parseTimeFields(block.time);
+    setEditStartH(startH);
+    setEditStartM(startM);
+    setEditDuration(duration);
     setEditOpen(true);
   };
 
   const handleSaveEdit = () => {
     if (!editingBlock) return;
+    const newTime = buildTimeStr(editStartH, editStartM, editDuration);
     const updatedBlock: TimeBlockType = {
       ...editingBlock,
       task: editTask,
-      time: editTime,
+      time: newTime,
       type: editType,
       modifications: [
         ...editingBlock.modifications,
@@ -277,6 +305,32 @@ function DailySchedule() {
     const updated = blocks.map((b) => (b.id === editingBlock.id ? updatedBlock : b));
     persistBlocks(updated);
     setEditOpen(false);
+  };
+
+  // Split block: shorten current to 30min, open add dialog for the freed slot
+  const handleSplitBlock = () => {
+    if (!editingBlock || editDuration <= 30) return;
+    const newDuration = 30;
+    const newTime = buildTimeStr(editStartH, editStartM, newDuration);
+    const updatedBlock: TimeBlockType = {
+      ...editingBlock,
+      time: newTime,
+      type: editType,
+      task: editTask,
+      modifications: [
+        ...editingBlock.modifications,
+        { time: new Date().toISOString(), original: editingBlock.time, new: newTime, reason: '拆分为30分钟' },
+      ],
+    };
+    const updated = blocks.map((b) => (b.id === editingBlock.id ? updatedBlock : b));
+    persistBlocks(updated);
+    setEditOpen(false);
+    // Open add dialog for the freed time slot
+    const freedH = editStartH + (editStartM + newDuration >= 60 ? 1 : 0);
+    setAddHour(String(freedH).padStart(2, '0'));
+    setAddType(editType);
+    setAddTask('');
+    setTimeout(() => setAddOpen(true), 100);
   };
 
   // Delete block
@@ -848,9 +902,48 @@ function DailySchedule() {
       <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 700, pb: 1 }}>
           <AddIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 20 }} />
-          添加任务 · {addHour}:00
+          添加任务
         </DialogTitle>
         <DialogContent sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Time picker */}
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block', fontWeight: 600 }}>
+              时间安排
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <select
+                  value={addHour}
+                  onChange={(e) => setAddHour(e.target.value)}
+                  style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid #E4E4E7', background: '#fff', fontSize: '0.88rem', width: 64, cursor: 'pointer' }}
+                >
+                  {HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+                <span style={{ color: '#71717A', fontWeight: 700 }}>:</span>
+                <select
+                  value={addStartM}
+                  onChange={(e) => setAddStartM(Number(e.target.value))}
+                  style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid #E4E4E7', background: '#fff', fontSize: '0.88rem', width: 64, cursor: 'pointer' }}
+                >
+                  <option value={0}>00</option>
+                  <option value={30}>30</option>
+                </select>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mx: 0.5 }}>→</Typography>
+              <Typography variant="body2" fontWeight={600}>
+                {(() => { const e = Number(addHour) * 60 + addStartM + addDuration; return `${String(Math.floor(e / 60)).padStart(2, '0')}:${String(e % 60).padStart(2, '0')}`; })()}
+              </Typography>
+              <Box sx={{ flex: 1 }} />
+              <select
+                value={addDuration}
+                onChange={(e) => setAddDuration(Number(e.target.value))}
+                style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid #E4E4E7', background: '#fff', fontSize: '0.88rem', cursor: 'pointer' }}
+              >
+                <option value={30}>30 分钟</option>
+                <option value={60}>60 分钟</option>
+              </select>
+            </Box>
+          </Box>
           <TextField
             label="任务描述"
             value={addTask}
@@ -858,7 +951,7 @@ function DailySchedule() {
             size="small"
             fullWidth
             autoFocus
-            placeholder="这个小时要做什么？"
+            placeholder="这个时段要做什么？"
           />
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block', fontWeight: 600 }}>
@@ -905,7 +998,48 @@ function DailySchedule() {
           编辑任务
         </DialogTitle>
         <DialogContent sx={{ pt: 1, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <TextField label="时间" value={editTime} onChange={(e) => setEditTime(e.target.value)} size="small" fullWidth />
+          {/* Time picker: scrollable selects */}
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block', fontWeight: 600 }}>
+              时间安排
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <select
+                  value={editStartH}
+                  onChange={(e) => setEditStartH(Number(e.target.value))}
+                  style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid #E4E4E7', background: '#fff', fontSize: '0.88rem', width: 64, cursor: 'pointer' }}
+                >
+                  {Array.from({ length: 10 }, (_, i) => i + 10).map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+                <span style={{ color: '#71717A', fontWeight: 700 }}>:</span>
+                <select
+                  value={editStartM}
+                  onChange={(e) => setEditStartM(Number(e.target.value))}
+                  style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid #E4E4E7', background: '#fff', fontSize: '0.88rem', width: 64, cursor: 'pointer' }}
+                >
+                  <option value={0}>00</option>
+                  <option value={30}>30</option>
+                </select>
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ mx: 0.5 }}>→</Typography>
+              <Typography variant="body2" fontWeight={600} sx={{ minWidth: 44 }}>
+                {(() => { const e = editStartH * 60 + editStartM + editDuration; return `${String(Math.floor(e / 60)).padStart(2, '0')}:${String(e % 60).padStart(2, '0')}`; })()}
+              </Typography>
+              <Box sx={{ flex: 1 }} />
+              <select
+                value={editDuration}
+                onChange={(e) => setEditDuration(Number(e.target.value))}
+                style={{ padding: '8px 6px', borderRadius: 8, border: '1px solid #E4E4E7', background: '#fff', fontSize: '0.88rem', cursor: 'pointer' }}
+              >
+                <option value={30}>30 分钟</option>
+                <option value={60}>60 分钟</option>
+                <option value={90}>90 分钟</option>
+              </select>
+            </Box>
+          </Box>
           <TextField label="任务描述" value={editTask} onChange={(e) => setEditTask(e.target.value)} size="small" fullWidth multiline rows={2} />
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block', fontWeight: 600 }}>任务类型</Typography>
@@ -915,6 +1049,17 @@ function DailySchedule() {
               <ToggleButton value="break" sx={{ fontSize: '0.78rem' }}>休息</ToggleButton>
             </ToggleButtonGroup>
           </Box>
+          {/* Split button */}
+          {editingBlock && editDuration > 30 && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={handleSplitBlock}
+              sx={{ alignSelf: 'flex-start', borderRadius: 2, fontSize: '0.78rem', color: '#7C3AED', borderColor: '#7C3AED', '&:hover': { borderColor: '#6D28D9', bgcolor: '#F3F0FF' } }}
+            >
+              ✂️ 拆分为 30 分钟（剩余时间可另加任务）
+            </Button>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2.5 }}>
           {editingBlock && (
